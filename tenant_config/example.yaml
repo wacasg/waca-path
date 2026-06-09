@@ -1,0 +1,14 @@
+tenant_id: example
+tenant_name: "Example Organization"
+
+gcp:
+  project_id: "your-gcp-project-id"
+  bq_dataset: "waca_core_output"
+  region: "asia-northeast1"
+
+site:
+  base_url: "https://www.example.com"
+  key_paths:
+    - "/"
+    - "/pricing"
+    - "/checkout/thank-you"
