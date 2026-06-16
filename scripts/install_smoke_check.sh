@@ -39,7 +39,11 @@ if find . -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.myp
   exit 1
 fi
 
-python3 -m py_compile backend/main.py
+# Syntax-check the backend without writing __pycache__. py_compile ignores
+# PYTHONDONTWRITEBYTECODE and always writes bytecode, which would trip the
+# cache-directory guard above on the next run, so use ast.parse instead to
+# keep this check idempotent.
+python3 -c "import ast; ast.parse(open('backend/main.py').read())"
 
 echo "Static public-install checks passed."
 

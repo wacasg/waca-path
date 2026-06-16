@@ -26,8 +26,8 @@ This repository is the minimal public install package for WACA path.
 ## Quick Start
 
 ```bash
-git clone https://github.com/wacasg/waca-path.git
-cd waca-path
+git clone https://github.com/wacasg/waca-path-public.git
+cd waca-path-public
 cp .env.example .env
 bash scripts/install_smoke_check.sh
 ```
@@ -91,8 +91,8 @@ WACA path は本番 website を自動変更しません。利用者自身の Goo
 ### まず試す
 
 ```bash
-git clone https://github.com/wacasg/waca-path.git
-cd waca-path
+git clone https://github.com/wacasg/waca-path-public.git
+cd waca-path-public
 cp .env.example .env
 bash scripts/install_smoke_check.sh
 ```

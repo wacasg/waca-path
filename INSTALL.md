@@ -8,8 +8,8 @@ the anonymous sample dataset first, then switch to your own WACA core output.
 ## 1. Clone and Configure
 
 ```bash
-git clone https://github.com/wacasg/waca-path.git
-cd waca-path
+git clone https://github.com/wacasg/waca-path-public.git
+cd waca-path-public
 cp .env.example .env
 ```
 
@@ -113,8 +113,8 @@ WACA path は、利用者自身の BigQuery dataset にある WACA core output t
 ### 1. clone して設定する
 
 ```bash
-git clone https://github.com/wacasg/waca-path.git
-cd waca-path
+git clone https://github.com/wacasg/waca-path-public.git
+cd waca-path-public
 cp .env.example .env
 ```
 
