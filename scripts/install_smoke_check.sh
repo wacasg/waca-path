@@ -11,6 +11,8 @@ LOCATION="${WACA_PATH_LOCATION:-asia-northeast1}"
 required_files=(
   "README.md"
   "INSTALL.md"
+  "CONTRIBUTING.md"
+  "SECURITY.md"
   "LICENSE"
   ".env.example"
   "backend/main.py"

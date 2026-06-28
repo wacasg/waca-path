@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import re
 from pathlib import Path
@@ -10,6 +11,8 @@ from typing import Any
 import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+logger = logging.getLogger("waca_path_backend")
 
 
 app = FastAPI(
@@ -164,9 +167,15 @@ async def _query_micro_user_table(
                 ),
             ) from exc
         except BadRequest as exc:
+            logger.warning(
+                "BigQuery rejected the query: %s", getattr(exc, "message", str(exc))
+            )
             raise HTTPException(
                 status_code=400,
-                detail=f"BigQuery rejected the query: {getattr(exc, 'message', str(exc))}",
+                detail=(
+                    "BigQuery rejected the request. Check that the dataset and "
+                    "micro_user_table schema match what WACA path expects."
+                ),
             ) from exc
         except GoogleAPICallError as exc:
             raise HTTPException(
