@@ -105,6 +105,12 @@ async def _query_micro_user_table(
 ) -> list[dict[str, Any]]:
     import asyncio
     from google.cloud import bigquery
+    from google.api_core.exceptions import (
+        BadRequest,
+        Forbidden,
+        GoogleAPICallError,
+        NotFound,
+    )
 
     sql = f"""
     SELECT
@@ -137,7 +143,36 @@ async def _query_micro_user_table(
                 bigquery.ScalarQueryParameter("max_rows", "INT64", max_rows),
             ]
         )
-        return [dict(row) for row in client.query(sql, job_config=job_config).result()]
+        try:
+            return [dict(row) for row in client.query(sql, job_config=job_config).result()]
+        except NotFound as exc:
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"BigQuery table not found: {project}.{dataset}.micro_user_table. "
+                    "Confirm WACA core has created it and that GOOGLE_CLOUD_PROJECT / "
+                    "WACA_CORE_DATASET point at the right project and dataset."
+                ),
+            ) from exc
+        except Forbidden as exc:
+            raise HTTPException(
+                status_code=403,
+                detail=(
+                    "Permission denied for BigQuery. The runtime identity needs "
+                    "roles/bigquery.dataViewer on the dataset and "
+                    "roles/bigquery.jobUser on the project."
+                ),
+            ) from exc
+        except BadRequest as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"BigQuery rejected the query: {getattr(exc, 'message', str(exc))}",
+            ) from exc
+        except GoogleAPICallError as exc:
+            raise HTTPException(
+                status_code=502,
+                detail=f"BigQuery request failed: {type(exc).__name__}",
+            ) from exc
 
     return await asyncio.to_thread(_run)
 

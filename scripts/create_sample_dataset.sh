@@ -3,7 +3,7 @@ set -euo pipefail
 
 PROJECT_ID="${PROJECT_ID:-${GOOGLE_CLOUD_PROJECT:-}}"
 DATASET_ID="${SAMPLE_WACA_CORE_DATASET:-waca_path_sample_core}"
-LOCATION="${WACA_PATH_AUDIT_LOCATION:-asia-northeast1}"
+LOCATION="${WACA_PATH_LOCATION:-${WACA_PATH_AUDIT_LOCATION:-asia-northeast1}}"
 DRY_RUN="${DRY_RUN:-0}"
 
 if [[ -z "$PROJECT_ID" ]]; then
@@ -40,10 +40,6 @@ fi
 bq query --location="${LOCATION}" --use_legacy_sql=false \
   "SELECT 'micro_user_table' AS table_name, COUNT(*) AS row_count FROM \`${PROJECT_ID}.${DATASET_ID}.micro_user_table\`
    UNION ALL
-   SELECT 'page_view' AS table_name, COUNT(*) AS row_count FROM \`${PROJECT_ID}.${DATASET_ID}.page_view\`
-   UNION ALL
-   SELECT 'micro_items_table' AS table_name, COUNT(*) AS row_count FROM \`${PROJECT_ID}.${DATASET_ID}.micro_items_table\`
-   UNION ALL
-   SELECT 'log_pseudonymous_users' AS table_name, COUNT(*) AS row_count FROM \`${PROJECT_ID}.${DATASET_ID}.log_pseudonymous_users\`"
+   SELECT 'micro_items_table' AS table_name, COUNT(*) AS row_count FROM \`${PROJECT_ID}.${DATASET_ID}.micro_items_table\`"
 
 echo "Anonymous WACA core output sample dataset ready: ${PROJECT_ID}.${DATASET_ID}"

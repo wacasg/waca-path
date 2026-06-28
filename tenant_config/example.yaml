@@ -1,11 +1,15 @@
+# The minimal public backend reads only gcp.project_id and gcp.bq_dataset.
+# Other keys below are descriptive or reserved for future use and are not read
+# by this backend yet.
 tenant_id: example
-tenant_name: "Example Organization"
+tenant_name: "Example Organization"   # descriptive only; not read by the backend
 
 gcp:
   project_id: "your-gcp-project-id"
   bq_dataset: "waca_core_output"
-  region: "asia-northeast1"
+  region: "asia-northeast1"           # not read by the backend; scripts use WACA_PATH_LOCATION
 
+# Reserved for future use. The minimal backend does not read the `site` block.
 site:
   base_url: "https://www.example.com"
   key_paths:

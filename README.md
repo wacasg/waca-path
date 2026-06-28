@@ -7,6 +7,19 @@ WACA path does not modify production websites. It reads analysis-ready BigQuery
 tables in your own Google Cloud project and returns observations that a human
 analyst can review.
 
+## Prerequisites: WACA core
+
+WACA path reads the analysis-ready tables that **WACA core** produces — in
+particular `micro_user_table`. WACA path does not generate these tables itself.
+Install and run WACA core first so that its output dataset exists in your Google
+Cloud project:
+
+- WACA core: https://github.com/wacasg/waca-core
+
+For a local rehearsal you can instead load the anonymous sample in
+`samples/bigquery/create_anonymous_waca_core_output_sample.sql`, which reproduces
+the shape of WACA core output without a full WACA core install.
+
 ## What Is Included
 
 This repository is the minimal public install package for WACA path.
@@ -21,13 +34,15 @@ This repository is the minimal public install package for WACA path.
 | `scripts/install_smoke_check.sh` | Static and optional local backend checks. |
 | `.env.example` | Configuration template. |
 | `INSTALL.md` | Step-by-step installation guide. |
+| `CONTRIBUTING.md` | How to contribute (DCO, Apache License 2.0). |
+| `SECURITY.md` | How to report security concerns privately. |
 | `LICENSE` | Apache License 2.0. |
 
 ## Quick Start
 
 ```bash
-git clone https://github.com/wacasg/waca-path-public.git
-cd waca-path-public
+git clone https://github.com/wacasg/waca-path.git
+cd waca-path
 cp .env.example .env
 bash scripts/install_smoke_check.sh
 ```
@@ -72,6 +87,19 @@ WACA path は、WACA core の出力を読み、一人の user journey に対す�
 WACA path は本番 website を自動変更しません。利用者自身の Google Cloud project
 にある BigQuery table を読み、人間の analyst が確認するための観察結果を返します。
 
+### 前提: WACA core
+
+WACA path は **WACA core** が生成する分析用 table（特に `micro_user_table`）を
+読み取ります。これらの table を WACA path 自身は作成しません。先に WACA core を
+install して実行し、出力 dataset を自分の Google Cloud project に用意してください。
+
+- WACA core: https://github.com/wacasg/waca-core
+
+ローカルでの動作確認だけであれば、
+`samples/bigquery/create_anonymous_waca_core_output_sample.sql` の匿名 sample を
+読み込むことで、WACA core を完全に install しなくても WACA core 出力と同じ形の
+table を作成できます。
+
 ### 含まれるファイル
 
 この repository は、Git から install して WACA path を動かすための最小構成です。
@@ -86,13 +114,15 @@ WACA path は本番 website を自動変更しません。利用者自身の Goo
 | `scripts/install_smoke_check.sh` | static check と optional local backend check。 |
 | `.env.example` | 設定 template。 |
 | `INSTALL.md` | install 手順書。 |
+| `CONTRIBUTING.md` | 貢献方法（DCO、Apache License 2.0）。 |
+| `SECURITY.md` | セキュリティ報告の窓口（非公開）。 |
 | `LICENSE` | Apache License 2.0。 |
 
 ### まず試す
 
 ```bash
-git clone https://github.com/wacasg/waca-path-public.git
-cd waca-path-public
+git clone https://github.com/wacasg/waca-path.git
+cd waca-path
 cp .env.example .env
 bash scripts/install_smoke_check.sh
 ```
