@@ -56,10 +56,15 @@ def _project_and_dataset(config: dict[str, Any]) -> tuple[str, str]:
     gcp = config.get("gcp") or {}
     project = os.environ.get("GOOGLE_CLOUD_PROJECT") or gcp.get("project_id")
     dataset = os.environ.get("WACA_CORE_DATASET") or gcp.get("bq_dataset")
-    if not project or not dataset:
+    missing = []
+    if not project:
+        missing.append("project (set GOOGLE_CLOUD_PROJECT or gcp.project_id)")
+    if not dataset:
+        missing.append("dataset (set WACA_CORE_DATASET or gcp.bq_dataset)")
+    if missing:
         raise HTTPException(
             status_code=400,
-            detail="GOOGLE_CLOUD_PROJECT and WACA_CORE_DATASET are required",
+            detail="Missing required configuration — " + "; ".join(missing),
         )
     return _validate_identifier(project, "project"), _validate_identifier(dataset, "dataset")
 

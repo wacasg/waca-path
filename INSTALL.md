@@ -5,6 +5,14 @@ This guide installs WACA path from Git and runs the minimal public backend.
 WACA path reads WACA core output tables in your own BigQuery dataset. Start with
 the anonymous sample dataset first, then switch to your own WACA core output.
 
+## Requirements
+
+- Python 3.10–3.13. Python 3.14 is not yet supported: `pydantic-core` fails to
+  build against it. On a newer system, install [uv](https://docs.astral.sh/uv/)
+  and create the environment with `uv venv --python 3.13`, or use a 3.10–3.13
+  interpreter.
+- The Google Cloud SDK (`bq`) if you run the sample dataset script.
+
 ## 1. Clone and Configure
 
 ```bash
@@ -13,14 +21,20 @@ cd waca-path
 cp .env.example .env
 ```
 
-Edit `.env`:
+Edit `.env`. Note that `.env` is a reference template: the backend reads these
+as **environment variables** and does not auto-load `.env`. Export them before
+starting the backend (see section 5).
 
-| Variable | Meaning |
-|---|---|
-| `GOOGLE_CLOUD_PROJECT` | Your Google Cloud project ID. |
-| `WACA_CORE_DATASET` | Dataset containing WACA core output tables. |
-| `SAMPLE_WACA_CORE_DATASET` | Anonymous sample dataset name for rehearsal. |
-| `DEFAULT_TENANT_ID` | Tenant config to load from `tenant_config/<id>.yaml`. |
+| Variable | Used by | Meaning |
+|---|---|---|
+| `GOOGLE_CLOUD_PROJECT` | backend | Your Google Cloud project ID. |
+| `WACA_CORE_DATASET` | backend | Dataset the backend queries (WACA core output). |
+| `SAMPLE_WACA_CORE_DATASET` | sample script | Dataset name the sample script creates. |
+| `DEFAULT_TENANT_ID` | backend | Tenant config to load from `tenant_config/<id>.yaml`. |
+
+`SAMPLE_WACA_CORE_DATASET` (used by the sample script) and `WACA_CORE_DATASET`
+(read by the backend) are different variables. For the sample rehearsal, set
+`WACA_CORE_DATASET` to the dataset the sample script created.
 
 ## 2. Static Smoke Check
 
@@ -53,6 +67,9 @@ python3 -m venv .venv
 pip install -r requirements.txt
 uvicorn main:app --host 127.0.0.1 --port 8080
 ```
+
+Run `uvicorn main:app` from the `backend` directory (as shown above). Started
+from the repository root it fails with `Could not import module "main"`.
 
 Check the health endpoint:
 
@@ -218,6 +235,13 @@ project or dataset, the environment variable wins.
 WACA path は、利用者自身の BigQuery dataset にある WACA core output table を読みます。
 最初は匿名 sample dataset で動作確認し、その後に自分の WACA core output に切り替えてください。
 
+### 必要環境
+
+- Python 3.10–3.13。Python 3.14 は未対応です（`pydantic-core` のビルドが失敗します）。
+  新しい環境では [uv](https://docs.astral.sh/uv/) を導入し `uv venv --python 3.13`
+  で環境を作るか、3.10–3.13 の interpreter を使ってください。
+- sample dataset script を使う場合は Google Cloud SDK（`bq`）。
+
 ### 1. clone して設定する
 
 ```bash
@@ -226,14 +250,20 @@ cd waca-path
 cp .env.example .env
 ```
 
-`.env` を編集します。
+`.env` を編集します。`.env` は控え用の template で、backend はこれらを
+**environment variables** として読み、`.env` 自体は自動読み込みしません。起動前に
+export してください（§5 参照）。
 
-| 変数 | 意味 |
-|---|---|
-| `GOOGLE_CLOUD_PROJECT` | 自分の Google Cloud project ID。 |
-| `WACA_CORE_DATASET` | WACA core output table がある dataset。 |
-| `SAMPLE_WACA_CORE_DATASET` | rehearsal 用の匿名 sample dataset 名。 |
-| `DEFAULT_TENANT_ID` | `tenant_config/<id>.yaml` から読む tenant 設定。 |
+| 変数 | 使用者 | 意味 |
+|---|---|---|
+| `GOOGLE_CLOUD_PROJECT` | backend | 自分の Google Cloud project ID。 |
+| `WACA_CORE_DATASET` | backend | backend が参照する dataset（WACA core output）。 |
+| `SAMPLE_WACA_CORE_DATASET` | sample script | sample script が作成する dataset 名。 |
+| `DEFAULT_TENANT_ID` | backend | `tenant_config/<id>.yaml` から読む tenant 設定。 |
+
+`SAMPLE_WACA_CORE_DATASET`（sample script 用）と `WACA_CORE_DATASET`（backend が
+参照）は別の変数です。sample で動作確認する場合は、`WACA_CORE_DATASET` に sample
+script が作成した dataset を指定してください。
 
 ### 2. static smoke check
 
@@ -266,6 +296,9 @@ python3 -m venv .venv
 pip install -r requirements.txt
 uvicorn main:app --host 127.0.0.1 --port 8080
 ```
+
+`uvicorn main:app` は `backend` ディレクトリから起動してください（上記のとおり）。
+リポジトリ直下から起動すると `Could not import module "main"` になります。
 
 health endpoint を確認します。
 
