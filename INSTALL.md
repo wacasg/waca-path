@@ -421,3 +421,59 @@ environment variables は `tenant_config/<id>.yaml` を上書きします。proj
   する前に、必ず前段でアクセス制御（IAP、ID token、内部限定 ingress など）を設けて
   ください。指定された `user_pseudo_id` の page path・device・地域を返します。
 - site audit は 1 リクエストにつき 1 つの `user_pseudo_id` を処理します。
+
+## 8. Open the admin UI (v0.2.0)
+
+With the backend running, open:
+
+```text
+http://127.0.0.1:8080/ui/users/
+```
+
+If you loaded the sample dataset, set the period to cover 2026-05-01 to
+2026-05-04 - the sample journeys sit in that range - and you should see three
+users, one of which has Clarity recordings attached.
+
+The UI is read-only. It issues `SELECT` queries against `micro_user_table` in
+the dataset named by `WACA_CORE_DATASET` and writes nothing.
+
+### Switch language
+
+Use the `日本語` / `English` links in the header, or add `?lang=en` /
+`?lang=ja`. The choice is stored in the `waca_path_lang` cookie. Without either,
+the browser's `Accept-Language` is used, then `ui.default_lang` from the tenant
+config, then Japanese.
+
+### Export a CSV
+
+Filter the list, then press **Export CSV**. The file covers the current filter
+set, up to 10,000 rows, and is UTF-8 with a BOM so Excel opens Japanese text
+correctly. If the row limit is reached, the UI says so and a note is written at
+the end of the file.
+
+### Add your own columns
+
+Declare the GA4 custom dimensions your `micro_user_table` actually has:
+
+```yaml
+# tenant_config/<your-tenant>.yaml
+ui:
+  default_lang: "en"
+  custom_columns:
+    - column: membership_type
+      label: "Membership"
+```
+
+They then appear in the users list, the user detail page and the CSV export. A
+column that is not present in the table is skipped, so a stale entry cannot
+break the page.
+
+### Run the tests
+
+```bash
+python -m pytest -q
+```
+
+The suite checks, among other things, that every UI string is translated in
+every language, that CSV cells cannot be executed as spreadsheet formulas, and
+that cursor paging does not drop or repeat rows.

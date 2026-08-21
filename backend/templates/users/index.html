@@ -1,0 +1,348 @@
+{% extends "base.html" %}
+{% block title %}{{ t('users.title') }} — {{ t('app.name') }}{% endblock %}
+
+{% block head %}
+<style>
+  /* ---- sticky left columns -------------------------------------------------
+     The three leading columns stay put while the table scrolls sideways, so the
+     row you are reading stays identifiable. Their combined width is ~35rem
+     (560px), and that is the whole problem: on a viewport only slightly wider
+     than that, the sticky block covers most of the screen and the right-hand
+     columns slide underneath it, unreachable no matter how far you scroll.
+
+     So sticky is only enabled once the viewport is at least twice their width
+     (2 x 560px = 1120px). Below that every column scrolls normally. An earlier
+     build released sticky only below 768px, which left a dead zone roughly
+     between 769px and 1183px - tablets in landscape, split windows, small
+     external displays - where the table could not be scrolled to the end.
+  -------------------------------------------------------------------------- */
+  #users-table {
+    --col1-w: 11rem;
+    --col2-w: 12rem;
+    --col3-w: 12rem;
+    table-layout: fixed;
+    width: max-content;
+    min-width: 100%;
+    font-size: 13px;
+  }
+  #users-table th, #users-table td {
+    padding: .4rem .5rem; border-bottom: 1px solid var(--line);
+    background-clip: padding-box; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  #users-table thead th {
+    position: sticky; top: 0; z-index: 20; background: #fff;
+    border-bottom: 2px solid var(--line); text-align: left; font-weight: 700;
+  }
+  .table-scroll:has(#users-table) { max-height: calc(100vh - 16rem); }
+
+  @media (min-width: 1121px) {
+    #users-table th:nth-child(1), #users-table td:nth-child(1) {
+      width: var(--col1-w); position: sticky; left: 0; background: #fff; z-index: 10;
+    }
+    #users-table th:nth-child(2), #users-table td:nth-child(2) {
+      width: var(--col2-w); position: sticky; left: var(--col1-w); background: #fff; z-index: 10;
+    }
+    #users-table th:nth-child(3), #users-table td:nth-child(3) {
+      width: var(--col3-w); position: sticky; left: calc(var(--col1-w) + var(--col2-w));
+      background: #fff; z-index: 10; box-shadow: inset -2px 0 0 var(--line);
+    }
+    #users-table thead th:nth-child(-n+3) { z-index: 30; }
+  }
+
+  .filter-panel { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .8rem; margin-bottom: .5rem; }
+  .filter-panel .row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .2rem 0; }
+  .filter-panel label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .filter-panel input, .filter-panel select { font-size: 12px; padding: .2rem .3rem; }
+  .chip {
+    display: inline-block; padding: .15rem .5rem; border: 1px solid var(--line);
+    border-radius: 999px; font-size: 12px; cursor: pointer; user-select: none;
+  }
+  .chip.on { background: var(--accent-bg); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+
+  .segment-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; margin: .4rem 0 .2rem; font-size: 12px; }
+  .segment-bar label { color: var(--muted); font-weight: 600; }
+  .segment-bar select { font-size: 12px; padding: .15rem .3rem; max-width: 18rem; }
+  .segment-note { font-size: 11px; color: var(--muted); margin: 0 0 .6rem; line-height: 1.6; }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>{{ t('users.title') }}</h2>
+<p class="muted" style="margin:-.4rem 0 .6rem; font-size:12px;">{{ t('users.subtitle') }}</p>
+
+<form class="filter-panel" method="get" action="/ui/users/"
+      x-data="filterApp({{ filters.presets | tojson }})">
+  <input type="hidden" name="lang" value="{{ lang }}">
+  <div class="row">
+    <label>{{ t('users.filter.period') }}</label>
+    <input type="date" name="from" value="{{ date_from }}">
+    <span class="muted">{{ t('users.filter.period.to') }}</span>
+    <input type="date" name="to" value="{{ date_to }}">
+
+    <label style="margin-left:.6rem;">{{ t('users.filter.search') }}</label>
+    <input type="text" name="q_global" value="{{ filters.q_global or '' }}"
+           placeholder="{{ t('users.filter.search.placeholder') }}" size="28">
+
+    <label style="margin-left:.6rem;">{{ t('users.filter.sort') }}</label>
+    <select name="sort">
+      {% for c in sortable_cols %}
+        <option value="{{ c }}" {% if filters.sort_col == c %}selected{% endif %}>{{ c }}</option>
+      {% endfor %}
+    </select>
+    <select name="dir">
+      <option value="desc" {% if filters.sort_dir == 'desc' %}selected{% endif %}>{{ t('users.filter.sort.desc') }}</option>
+      <option value="asc"  {% if filters.sort_dir == 'asc'  %}selected{% endif %}>{{ t('users.filter.sort.asc') }}</option>
+    </select>
+
+    <button type="submit" class="btn">{{ t('users.filter.search') }}</button>
+    <a href="/ui/users/?lang={{ lang }}" class="btn" title="{{ t('users.filter.reset.tip') }}">{{ t('users.filter.reset') }}</a>
+  </div>
+
+  <div class="row">
+    <label>{{ t('users.filter.presets') }}</label>
+    <input type="hidden" name="preset" :value="presets.join(',')">
+    {% for tag in valid_presets %}
+      <span class="chip" :class="presets.includes('{{ tag }}') ? 'on' : ''"
+            title="{{ t('users.preset.' ~ tag ~ '.tip') }}"
+            @click="toggle('{{ tag }}'); $el.closest('form').submit()">
+        {{ t('users.preset.' ~ tag) }}{% if tag == 'clarity' %} ⓘ{% endif %}
+      </span>
+    {% endfor %}
+  </div>
+</form>
+
+{# ---- Segments + CSV -------------------------------------------------------
+   The full filter state lives in the query string, so a saved segment is just
+   {name, query}. Storing it in localStorage keeps this feature free of any
+   server-side write, which matters for a read-only tool.
+--------------------------------------------------------------------------- #}
+<div class="segment-bar" x-data="segmentBar()" x-init="load()">
+  <label>💾 {{ t('segment.label') }}</label>
+
+  <select x-model="selected" @change="apply()">
+    <option value="">{{ t('segment.select.placeholder') }}</option>
+    <template x-for="seg in segments" :key="seg.name">
+      <option :value="seg.name" x-text="optionLabel(seg)"></option>
+    </template>
+  </select>
+
+  <button type="button" class="btn" @click="save()" title="{{ t('segment.save.tip') }}">{{ t('segment.save') }}</button>
+  <button type="button" class="btn" @click="remove()" x-show="selected" x-cloak
+          title="{{ t('segment.delete.tip') }}">{{ t('segment.delete') }}</button>
+
+  <span style="width:.5rem;"></span>
+
+  <button type="button" class="btn" @click="downloadCsv()" :disabled="csvBusy"
+          title="{{ t('csv.button.tip', max=csv_max_rows) }}">
+    <span x-show="!csvBusy">{{ t('csv.button') }}</span>
+    <span x-show="csvBusy" x-cloak>{{ t('csv.button.busy') }}</span>
+  </button>
+
+  <span style="width:.5rem;"></span>
+
+  <button type="button" class="btn" @click="exportJson()" title="{{ t('segment.export.tip') }}">{{ t('segment.export') }}</button>
+  <label class="btn" style="cursor:pointer;" title="{{ t('segment.import.tip') }}">
+    {{ t('segment.import') }}
+    <input type="file" accept="application/json,.json" style="display:none" @change="importJson($event)">
+  </label>
+
+  <span class="muted" x-show="msg" x-text="msg" x-cloak style="margin-left:.4rem;"></span>
+</div>
+
+<p class="segment-note" x-data="segmentBar()" x-init="load()">
+  📍 {{ t('segment.current') }}: <strong x-text="currentLabel()">{{ t('segment.current.unsaved') }}</strong>
+  ／ {{ t('segment.storage_note') | safe }}
+</p>
+
+<div class="table-scroll">
+  <table id="users-table">
+    <thead>
+      <tr>
+        <th>{{ t('users.col.last_active') }}</th>
+        <th>{{ t('users.col.user_id') }}</th>
+        <th>{{ t('users.col.pseudo_id') }}</th>
+        <th>{{ t('users.col.identified') }}</th>
+        <th>{{ t('users.col.sessions') }}</th>
+        <th>{{ t('users.col.page_views') }}</th>
+        <th>{{ t('users.col.events') }}</th>
+        <th>{{ t('users.col.key_events') }}</th>
+        <th>{{ t('users.col.device') }}</th>
+        <th>{{ t('users.col.browser') }}</th>
+        <th>{{ t('users.col.country') }}</th>
+        <th>{{ t('users.col.region') }}</th>
+        {% for c in custom_columns %}<th>{{ c.label }}</th>{% endfor %}
+        <th>{{ t('users.col.first_touch') }}</th>
+      </tr>
+    </thead>
+    <tbody id="users-tbody">
+      {% include "users/_rows.html" %}
+    </tbody>
+  </table>
+</div>
+
+<script>
+function filterApp(initialPresets) {
+  return {
+    presets: Array.isArray(initialPresets) ? [...initialPresets] : [],
+    toggle(tag) {
+      const i = this.presets.indexOf(tag);
+      if (i >= 0) this.presets.splice(i, 1); else this.presets.push(tag);
+    },
+  };
+}
+
+// Segment storage. The key is versioned so a future format change can migrate
+// rather than silently misread old entries.
+const SEGMENT_STORE_KEY = 'waca_path.userSegments.v1';
+const I18N = {
+  prompt: {{ t('segment.prompt') | tojson }},
+  saved: {{ t('segment.saved') | tojson }},
+  deleted: {{ t('segment.deleted') | tojson }},
+  confirmDelete: {{ t('segment.delete.confirm') | tojson }},
+  imported: {{ t('segment.imported') | tojson }},
+  importFailed: {{ t('segment.import.failed') | tojson }},
+  saveFailed: {{ t('segment.save.failed') | tojson }},
+  optionSavedAt: {{ t('segment.option.saved_at') | tojson }},
+  currentUnsaved: {{ t('segment.current.unsaved') | tojson }},
+  currentNone: {{ t('segment.current.none') | tojson }},
+  csvDone: {{ t('csv.done') | tojson }},
+  csvTruncated: {{ t('csv.truncated') | tojson }},
+  csvFailed: {{ t('csv.failed') | tojson }},
+};
+function fmt(template, params) {
+  return String(template).replace(/\{(\w+)\}/g, (m, k) => (k in params ? params[k] : m));
+}
+
+function segmentBar() {
+  return {
+    segments: [], selected: '', msg: '', csvBusy: false,
+    _flash(m) { this.msg = m; setTimeout(() => { this.msg = ''; }, 8000); },
+    _read() {
+      try {
+        const raw = localStorage.getItem(SEGMENT_STORE_KEY);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed.filter(s => s && s.name) : [];
+      } catch (_) { return []; }
+    },
+    _write(list) {
+      try { localStorage.setItem(SEGMENT_STORE_KEY, JSON.stringify(list)); }
+      catch (_) { this._flash(I18N.saveFailed); }
+    },
+    load() { this.segments = this._read(); },
+    /* cursor is a transient paging token, never part of a saved segment. */
+    currentQuery() {
+      const qs = new URLSearchParams(window.location.search);
+      qs.delete('cursor');
+      return qs.toString();
+    },
+    csvHref() {
+      const q = this.currentQuery();
+      return '/ui/users/export.csv' + (q ? '?' + q : '');
+    },
+    optionLabel(seg) {
+      if (!seg.saved_at) return seg.name;
+      const d = new Date(seg.saved_at);
+      if (isNaN(d)) return seg.name;
+      const date = String(d.getMonth() + 1).padStart(2, '0') + '/' + String(d.getDate()).padStart(2, '0');
+      return fmt(I18N.optionSavedAt, { name: seg.name, date });
+    },
+    currentLabel() {
+      const q = this.currentQuery();
+      const hit = this.segments.find(s => s.query === q);
+      if (hit) return hit.name;
+      return q ? I18N.currentUnsaved : I18N.currentNone;
+    },
+    save() {
+      const name = (window.prompt(I18N.prompt, '') || '').trim();
+      if (!name) return;
+      const list = this._read().filter(s => s.name !== name);
+      list.push({ name, query: this.currentQuery(), saved_at: new Date().toISOString() });
+      list.sort((a, b) => a.name.localeCompare(b.name));
+      this._write(list);
+      this.segments = list;
+      this.selected = name;
+      this._flash(fmt(I18N.saved, { name }));
+    },
+    apply() {
+      if (!this.selected) return;
+      const seg = this.segments.find(s => s.name === this.selected);
+      if (!seg) return;
+      window.location.href = '/ui/users/' + (seg.query ? '?' + seg.query : '');
+    },
+    remove() {
+      if (!this.selected) return;
+      if (!window.confirm(fmt(I18N.confirmDelete, { name: this.selected }))) return;
+      const list = this._read().filter(s => s.name !== this.selected);
+      this._write(list);
+      this.segments = list;
+      this._flash(fmt(I18N.deleted, { name: this.selected }));
+      this.selected = '';
+    },
+    exportJson() {
+      const blob = new Blob([JSON.stringify(this._read(), null, 2)], { type: 'application/json' });
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'waca_path_segments.json';
+      a.click();
+      URL.revokeObjectURL(a.href);
+    },
+    importJson(ev) {
+      const file = ev.target && ev.target.files && ev.target.files[0];
+      if (!file) return;
+      const reader = new FileReader();
+      reader.onload = () => {
+        try {
+          const incoming = JSON.parse(String(reader.result));
+          if (!Array.isArray(incoming)) throw new Error('not an array');
+          const byName = new Map(this._read().map(s => [s.name, s]));
+          let added = 0;
+          for (const seg of incoming) {
+            if (!seg || typeof seg.name !== 'string' || typeof seg.query !== 'string') continue;
+            byName.set(seg.name, {
+              name: seg.name, query: seg.query,
+              saved_at: seg.saved_at || new Date().toISOString(),
+            });
+            added += 1;
+          }
+          const list = Array.from(byName.values()).sort((a, b) => a.name.localeCompare(b.name));
+          this._write(list);
+          this.segments = list;
+          this._flash(fmt(I18N.imported, { count: added }));
+        } catch (_) {
+          this._flash(I18N.importFailed);
+        } finally {
+          ev.target.value = '';
+        }
+      };
+      reader.readAsText(file);
+    },
+    /* Fetch rather than a plain link so the truncation header can be read and
+       reported before the operator opens the file. */
+    async downloadCsv() {
+      if (this.csvBusy) return;
+      this.csvBusy = true;
+      try {
+        const res = await fetch(this.csvHref());
+        if (!res.ok) { this._flash(I18N.csvFailed); return; }
+        const truncated = res.headers.get('X-Waca-Path-Truncated') === '1';
+        const rows = res.headers.get('X-Waca-Path-Rows') || '?';
+        const blob = await res.blob();
+        const cd = res.headers.get('Content-Disposition') || '';
+        const m = cd.match(/filename="([^"]+)"/);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = m ? m[1] : 'waca_path_users.csv';
+        a.click();
+        URL.revokeObjectURL(a.href);
+        this._flash(fmt(truncated ? I18N.csvTruncated : I18N.csvDone, { rows }));
+      } catch (_) {
+        this._flash(I18N.csvFailed);
+      } finally {
+        this.csvBusy = false;
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

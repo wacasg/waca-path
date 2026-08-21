@@ -17,6 +17,18 @@ required_files=(
   ".env.example"
   "backend/main.py"
   "backend/requirements.txt"
+  "backend/routers/ui.py"
+  "backend/services/config.py"
+  "backend/services/user_explorer.py"
+  "backend/services/user_filters.py"
+  "backend/services/csv_export.py"
+  "backend/i18n/__init__.py"
+  "backend/i18n/ja.json"
+  "backend/i18n/en.json"
+  "backend/templates/base.html"
+  "backend/templates/users/index.html"
+  "backend/templates/users/detail.html"
+  "CHANGELOG.md"
   "tenant_config/example.yaml"
   "samples/bigquery/create_anonymous_waca_core_output_sample.sql"
   "scripts/create_sample_dataset.sh"
@@ -29,7 +41,11 @@ for file in "${required_files[@]}"; do
   fi
 done
 
-for path in docs tests training metrics; do
+# `tests/` is deliberately allowed from v0.2.0: the suite enforces guarantees a
+# reader cannot verify by inspection - that every UI string is translated, that
+# CSV cells cannot be executed as spreadsheet formulas, and that cursor paging
+# does not drop rows. Internal-only material (docs, training, metrics) stays out.
+for path in docs training metrics; do
   if [[ -e "$path" ]]; then
     echo "ERROR: public install repository should not contain: $path" >&2
     exit 1
@@ -46,6 +62,37 @@ fi
 # cache-directory guard above on the next run, so use ast.parse instead to
 # keep this check idempotent.
 python3 -c "import ast; ast.parse(open('backend/main.py').read())"
+
+# --- Admin UI static checks (v0.2.0) -----------------------------------------
+# Catch the two failure modes that only show up at runtime otherwise: an
+# untranslated UI string, and a template that no longer parses.
+if command -v python3 >/dev/null 2>&1; then
+  python3 - <<'PYCHECK'
+import json
+import sys
+from pathlib import Path
+
+root = Path(".")
+catalogs = {p.stem: json.loads(p.read_text("utf-8")) for p in root.glob("backend/i18n/*.json")}
+if "ja" not in catalogs:
+    print("ERROR: backend/i18n/ja.json is missing", file=sys.stderr)
+    sys.exit(1)
+
+base = set(catalogs["ja"])
+failed = False
+for lang, cat in catalogs.items():
+    missing = base - set(cat)
+    if missing:
+        failed = True
+        print(f"ERROR: {lang}.json is missing {len(missing)} key(s): "
+              f"{sorted(missing)[:5]}", file=sys.stderr)
+if failed:
+    sys.exit(1)
+print(f"i18n catalogues OK ({len(base)} keys x {len(catalogs)} languages)")
+PYCHECK
+else
+  echo "python3 not found; skipped the i18n catalogue check." >&2
+fi
 
 echo "Static public-install checks passed."
 

@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% block title %}{{ detail.user_pseudo_id[:12] }}… — {{ t('app.name') }}{% endblock %}
+
+{% block head %}
+<style>
+  .kv { width: 100%; font-size: 13px; }
+  .kv th { text-align: left; color: var(--muted); font-weight: 600; padding: .25rem .5rem .25rem 0; white-space: nowrap; vertical-align: top; }
+  .kv td { padding: .25rem 0; }
+  .session { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .8rem; margin-bottom: .5rem; }
+  .session-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; }
+  .session-time { font-weight: 700; }
+  .clarity-legend {
+    font-size: 12px; line-height: 1.7; margin: .2rem 0 .8rem;
+    padding: .5rem .7rem; border-radius: 5px;
+    background: var(--accent-bg); border: 1px solid #e0daff;
+  }
+  .clarity-rec { display: inline-flex; gap: .25rem; align-items: center; margin-right: .35rem; flex-wrap: wrap; }
+  .clarity-btn { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .clarity-btn:hover { background: #3d2fa0; color: #fff; }
+  .clarity-id {
+    background: #fff; border: 1px solid var(--line); border-radius: 3px;
+    padding: 0 .3rem; cursor: pointer; font-size: 11px;
+  }
+  .clarity-id:hover { background: var(--accent-bg); }
+</style>
+{% endblock %}
+
+{% block content %}
+<a class="btn" href="/ui/users/?from={{ date_from }}&to={{ date_to }}&lang={{ lang }}">{{ t('detail.back') }}</a>
+
+<h2 style="margin-top:.6rem;">
+  {% if detail.profile.get('user_id') %}
+    {{ detail.profile.get('user_id') }} <span class="badge badge-ok">{{ t('users.col.identified') }}</span>
+  {% else %}
+    <span class="badge">{{ t('value.unknown') }}</span>
+  {% endif %}
+  <code class="muted" style="font-size:12px; font-weight:normal;">{{ detail.user_pseudo_id }}</code>
+</h2>
+
+<div class="card">
+  <strong>{{ t('detail.profile') }}</strong>
+  <table class="kv">
+    <tr><th>{{ t('users.col.first_touch') }}</th>
+        <td>{{ detail.profile.get('first_touch_timestamp').strftime('%Y-%m-%d %H:%M:%S') if detail.profile.get('first_touch_timestamp') else '-' }}</td></tr>
+    <tr><th>{{ t('users.col.last_active') }}</th>
+        <td>{{ detail.profile.get('last_active_timestamp').strftime('%Y-%m-%d %H:%M:%S') if detail.profile.get('last_active_timestamp') else '-' }}</td></tr>
+    <tr><th>{{ t('users.col.sessions') }}</th><td>{{ detail.profile.get('sessions') or 0 }}</td></tr>
+    <tr><th>{{ t('users.col.page_views') }}</th><td>{{ detail.profile.get('page_views') or 0 }}</td></tr>
+    <tr><th>{{ t('users.col.events') }}</th><td>{{ detail.profile.get('events') or 0 }}</td></tr>
+    <tr><th>{{ t('users.col.key_events') }}</th><td>{{ detail.profile.get('key_events') or 0 }}</td></tr>
+    <tr><th>{{ t('users.col.device') }}</th><td>{{ detail.profile.get('device_category') or '-' }}</td></tr>
+    {% for c in custom_columns %}
+      <tr><th>{{ c.label }}</th><td>{{ detail.profile.get(c.column) if detail.profile.get(c.column) is not none else '-' }}</td></tr>
+    {% endfor %}
+  </table>
+</div>
+
+<h2>{{ t('detail.sessions') }} <span class="muted" style="font-weight:normal; font-size:.85em;">({{ date_from }} 〜 {{ date_to }})</span></h2>
+
+{% if has_clarity_recordings %}
+  {# The GA4 / Clarity session mismatch is the single most common source of
+     misreading here, so the explanation is always visible rather than hidden
+     behind a tooltip on a badge. #}
+  <p class="clarity-legend">
+    <strong>{{ t('clarity.legend.title') }}</strong>: {{ t('clarity.legend.body') | safe }}
+  </p>
+{% endif %}
+
+{% if detail.sessions %}
+  {% for sess in detail.sessions %}
+    <div class="session">
+      <div class="session-head">
+        <span class="session-time">{{ sess.session_start.strftime('%Y-%m-%d %H:%M') if sess.session_start else '-' }}</span>
+        <span class="muted">{{ t('detail.session.pv', count=sess.page_views or 0) }}</span>
+        <span class="muted">{{ t('detail.session.events', count=sess.events or 0) }}</span>
+        {% if (sess.key_events or 0) > 0 %}
+          <span class="badge badge-ok">{{ t('detail.session.key_events', count=sess.key_events) }}</span>
+        {% endif %}
+        <span class="muted">{{ sess.device_category or '-' }} / {{ sess.browser or '-' }}</span>
+        <span class="muted">{{ sess.country or '-' }}{% if sess.region %} / {{ sess.region }}{% endif %}</span>
+      </div>
+
+      {% set recordings = sess.clarity_recordings or [] %}
+      {% if recordings %}
+        <div style="margin-top:.4rem;">
+          {% for rec in recordings %}
+            <span class="clarity-rec">
+              <a class="btn clarity-btn" target="_blank" rel="noopener noreferrer"
+                 href="{{ rec.open_url or rec.url }}"
+                 title="{{ t('clarity.list.tip') if rec.open_url != rec.url else t('clarity.open.tip') }}">
+                {%- if rec.open_url != rec.url -%}
+                  {{ t('clarity.list') }}
+                {%- elif recordings|length > 1 -%}
+                  {{ t('clarity.open.numbered', index=loop.index) }}
+                {%- else -%}
+                  {{ t('clarity.open') }}
+                {%- endif -%}
+              </a>
+              {% if rec.ids %}
+                {# The ID goes into a data attribute, never into the Alpine
+                   expression itself: Jinja escapes a quote to &#39;, the browser
+                   decodes it back before Alpine evaluates the string, and the
+                   expression could then be escaped. Data attributes are never
+                   evaluated as JavaScript. #}
+                {% if rec.ids.clarity_user_id %}
+                  <code class="clarity-id" title="{{ t('clarity.user_id.tip') }}"
+                        data-clip="{{ rec.ids.clarity_user_id }}"
+                        x-data @click="navigator.clipboard.writeText($el.dataset.clip)">👤 {{ rec.ids.clarity_user_id }}</code>
+                {% endif %}
+                {% if rec.ids.clarity_session_id %}
+                  <code class="clarity-id" title="{{ t('clarity.session_id.tip') }}"
+                        data-clip="{{ rec.ids.clarity_session_id }}"
+                        x-data @click="navigator.clipboard.writeText($el.dataset.clip)">🎞 {{ rec.ids.clarity_session_id }}</code>
+                {% endif %}
+              {% endif %}
+              {% if (rec.shared_sessions or 0) > 1 %}
+                <span class="badge badge-warn" title="{{ t('clarity.shared.tip', count=rec.shared_sessions) }}">
+                  {{ t('clarity.shared', count=rec.shared_sessions) }}
+                </span>
+              {% endif %}
+            </span>
+          {% endfor %}
+          {% if recordings|length > 1 %}
+            <span class="badge badge-warn" title="{{ t('clarity.multi.tip', count=recordings|length) }}">
+              {{ t('clarity.multi', count=recordings|length) }}
+            </span>
+          {% endif %}
+        </div>
+      {% endif %}
+    </div>
+  {% endfor %}
+{% else %}
+  <p class="muted">{{ t('detail.empty') }}</p>
+{% endif %}
+{% endblock %}

@@ -1,67 +1,51 @@
-"""WACA path minimal public backend."""
+"""WACA path public backend.
+
+v0.1.0 exposed a single self-contained module with ``/healthz`` and
+``/api/agent/site-audit``. v0.2.0 keeps both of those unchanged and adds a
+read-only admin UI under ``/ui/``. Shared helpers moved to
+``services/config.py`` so that both halves validate identifiers the same way.
+"""
 
 from __future__ import annotations
 
 import logging
 import os
-import re
-from pathlib import Path
 from typing import Any
 
-import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+
+from routers import ui as ui_router
+from services.config import (
+    default_tenant_id,
+    load_tenant_config,
+    project_and_dataset,
+    validate_identifier,
+)
 
 logger = logging.getLogger("waca_path_backend")
 
 
 app = FastAPI(
     title="WACA path backend",
-    description="Minimal public site-audit backend for WACA core output.",
-    version="0.1.0",
+    description="Public site-audit backend and read-only admin UI for WACA core output.",
+    version="0.2.0",
 )
 
-_IDENT_RE = re.compile(r"^[A-Za-z0-9_\-:]{1,128}$")
-_BASE_DIR = Path(__file__).resolve().parents[1]
-_TENANT_DIR = _BASE_DIR / "tenant_config"
+app.include_router(ui_router.router)
 
 
 class SiteAuditRequest(BaseModel):
     user_pseudo_id: str = Field(..., min_length=1, max_length=256)
-    tenant_id: str = Field(default_factory=lambda: os.environ.get("DEFAULT_TENANT_ID", "example"))
+    tenant_id: str = Field(default_factory=default_tenant_id)
     max_rows: int = Field(default=50, ge=1, le=500)
 
 
-def _validate_identifier(value: str, name: str) -> str:
-    if not _IDENT_RE.match(value):
-        raise HTTPException(status_code=400, detail=f"Invalid {name}: {value!r}")
-    return value
-
-
-def _load_tenant_config(tenant_id: str) -> dict[str, Any]:
-    safe_id = _validate_identifier(tenant_id, "tenant_id")
-    path = (_TENANT_DIR / f"{safe_id}.yaml").resolve()
-    if _TENANT_DIR.resolve() not in path.parents:
-        raise HTTPException(status_code=400, detail="Invalid tenant config path")
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"Tenant config not found: {safe_id}")
-    with path.open(encoding="utf-8") as f:
-        data = yaml.safe_load(f) or {}
-    if not isinstance(data, dict):
-        raise HTTPException(status_code=500, detail=f"Tenant config must be a mapping: {safe_id}")
-    return data
-
-
-def _project_and_dataset(config: dict[str, Any]) -> tuple[str, str]:
-    gcp = config.get("gcp") or {}
-    project = os.environ.get("GOOGLE_CLOUD_PROJECT") or gcp.get("project_id")
-    dataset = os.environ.get("WACA_CORE_DATASET") or gcp.get("bq_dataset")
-    if not project or not dataset:
-        raise HTTPException(
-            status_code=400,
-            detail="GOOGLE_CLOUD_PROJECT and WACA_CORE_DATASET are required",
-        )
-    return _validate_identifier(project, "project"), _validate_identifier(dataset, "dataset")
+# Backwards-compatible aliases. The implementations now live in
+# services/config.py; behaviour is identical to v0.1.0.
+_validate_identifier = validate_identifier
+_load_tenant_config = load_tenant_config
+_project_and_dataset = project_and_dataset
 
 
 def _summarize_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
