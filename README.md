@@ -26,9 +26,14 @@ This repository is the minimal public install package for WACA path.
 
 | Path | Purpose |
 |---|---|
-| `backend/main.py` | FastAPI backend with `/healthz` and `/api/agent/site-audit`. |
+| `backend/main.py` | FastAPI app: `/healthz`, `/api/agent/site-audit`, and the admin UI. |
+| `backend/routers/ui.py` | Read-only admin UI: users list, user detail, CSV export. |
+| `backend/services/` | BigQuery queries, filtering and paging, CSV export. |
+| `backend/i18n/` | UI language catalogues (`ja.json`, `en.json`). |
+| `backend/templates/` | Jinja2 templates for the admin UI. |
 | `backend/requirements.txt` | Python dependencies. |
 | `tenant_config/example.yaml` | Example tenant configuration. |
+| `tests/` | Unit tests (`python -m pytest -q`). |
 | `samples/bigquery/create_anonymous_waca_core_output_sample.sql` | Anonymous WACA core output sample. |
 | `scripts/create_sample_dataset.sh` | Helper script to create the sample dataset. |
 | `scripts/install_smoke_check.sh` | Static and optional local backend checks. |
@@ -62,7 +67,76 @@ Then open:
 ```text
 http://127.0.0.1:8080/healthz
 http://127.0.0.1:8080/docs
+http://127.0.0.1:8080/ui/users/
 ```
+
+## Admin UI
+
+`/ui/users/` is a read-only view over `micro_user_table`. It never writes.
+
+* **Users list** - filter by period, free text, presets (key events, identified,
+  repeat visitors, has Clarity recording) and sort by any listed column.
+  Paging uses a keyset cursor, so rows are never duplicated or skipped.
+* **Saved segments** - name the current filter set and recall it later. Segments
+  live in the browser's `localStorage`, so this stays a read-only tool; use
+  **Export** / **Import** to move them between machines or share them.
+* **CSV export** - the current filtered result, up to 10,000 rows, UTF-8 with a
+  BOM so Excel opens it correctly. If the limit is reached the UI says so and a
+  note is written into the file; the export is never truncated silently.
+* **User detail** - profile, totals, and one row per session.
+
+### Language
+
+The UI ships in English and Japanese. The language is chosen in this order:
+
+1. `?lang=en` / `?lang=ja` (the switch in the header; the choice is remembered
+   in a cookie)
+2. the `waca_path_lang` cookie
+3. the browser's `Accept-Language`
+4. `ui.default_lang` in the tenant config
+5. Japanese
+
+To add a language, copy `backend/i18n/ja.json`, translate the values, and add the
+code to `SUPPORTED_LANGS` in `backend/i18n/__init__.py`. `python -m pytest -q`
+fails if a catalogue is missing a key.
+
+### Custom columns
+
+WACA path ships no organisation-specific columns. Declare the GA4 custom
+dimensions your own `micro_user_table` has, and they appear in the list, the
+detail page and the CSV:
+
+```yaml
+ui:
+  custom_columns:
+    - column: membership_type
+      label: "Membership"
+```
+
+A declared column that does not exist in the table is skipped rather than
+breaking the page.
+
+### Clarity recordings
+
+If `micro_user_table` carries a `clarity_play_url`, each session row shows the
+recording links for that session plus the Clarity-side user and session IDs.
+
+**Clarity and GA4 do not agree on where a session ends.** GA4 starts a new
+session after 30 minutes of inactivity and at midnight; Clarity does not. One
+recording therefore routinely maps onto several GA4 sessions. WACA path keeps
+every recording rather than picking one, and flags a recording that is shared
+with other sessions in the displayed period, so a recording is never silently
+presented as belonging to a single row. Copy the IDs to line the two systems up
+inside Clarity.
+
+The "has Clarity recording" filter is evaluated **per user**: a matching user can
+still have sessions with no recording.
+
+### Not included
+
+This repository is the public install package. LLM-generated personas and
+journey maps, external knowledge-base integrations, and commerce dashboards are
+not part of it.
 
 ## Legal Notice
 

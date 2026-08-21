@@ -16,3 +16,18 @@ site:
     - "/"
     - "/pricing"
     - "/checkout/thank-you"
+
+# Admin UI settings (v0.2.0). All optional.
+ui:
+  # Language shown when the visitor has no ?lang= and no cookie and their
+  # Accept-Language header matches nothing. Supported: ja, en.
+  default_lang: "en"
+
+  # GA4 custom dimensions to show as extra columns in the users list, the user
+  # detail page and the CSV export. WACA path ships none by default: declare the
+  # ones your own micro_user_table actually has.
+  # A column that does not exist in the table is skipped rather than breaking
+  # the page, so a stale entry here is safe.
+  custom_columns:
+    - column: membership_type      # column name in micro_user_table
+      label: "Membership"          # heading shown in the UI and the CSV
