@@ -1,0 +1,146 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# A second push to the same PR cancels the previous run.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        # The repository does not pin a minimum, so this range is what CI
+        # actually proves. Widen it only once a version has passed here.
+        python-version: ["3.10", "3.11", "3.12"]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          pip install pytest
+
+      - name: Run tests
+        run: python -m pytest -q
+
+  install-check:
+    name: Install smoke check
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      # Verifies the public-install invariants: required files present, no
+      # internal-only directories, no cache directories, and no language
+      # catalogue missing a key.
+      - name: Run install smoke check
+        run: bash scripts/install_smoke_check.sh
+
+  app-boots:
+    name: App imports and serves
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r backend/requirements.txt
+          # TestClient needs httpx, which is a test-only dependency and is
+          # deliberately not in backend/requirements.txt.
+          pip install httpx
+
+      # Catches the failure a unit test cannot: a template that no longer parses,
+      # a route that fails to register, or a missing runtime dependency. No
+      # Google Cloud credentials are used, so only credential-free paths are hit.
+      - name: Start the backend and probe it
+        working-directory: backend
+        run: |
+          uvicorn main:app --host 127.0.0.1 --port 8080 &
+          for i in $(seq 1 30); do
+            if curl -fsS http://127.0.0.1:8080/healthz >/dev/null 2>&1; then
+              echo "backend is up after ${i}s"
+              break
+            fi
+            sleep 1
+          done
+          curl -fsS http://127.0.0.1:8080/healthz | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -fsS -o /dev/null -w 'openapi=%{http_code}\n' http://127.0.0.1:8080/openapi.json
+
+      - name: Render the templates without BigQuery
+        run: |
+          python - <<'PY'
+          import sys
+          sys.path.insert(0, "backend")
+
+          from fastapi.testclient import TestClient
+          import routers.ui as ui
+
+          # No credentials in CI, so the query is stubbed. The point is that the
+          # templates render and the routes are wired, not that BigQuery works.
+          async def _no_rows(**kwargs):
+              return []
+
+          async def _empty_detail(**kwargs):
+              return {"profile": {}, "sessions": [], "user_pseudo_id": "sample"}
+
+          ui.list_users = _no_rows
+          ui.get_user_detail = _empty_detail
+
+          from main import app
+
+          client = TestClient(app)
+
+          for path, expected in [
+              ("/ui/users/?lang=ja", "ユーザー一覧"),
+              ("/ui/users/?lang=en", "Users"),
+              ("/ui/users/sample?lang=en", "Sessions"),
+          ]:
+              r = client.get(path)
+              assert r.status_code == 200, (path, r.status_code)
+              assert expected in r.text, (path, expected)
+              print(f"OK {path}")
+
+          r = client.get("/ui/users/export.csv?lang=en")
+          assert r.status_code == 200, r.status_code
+          assert r.headers["content-type"].startswith("text/csv")
+          assert r.text.startswith("﻿"), "CSV must carry a UTF-8 BOM for Excel"
+          assert "Last active" in r.text
+          print("OK /ui/users/export.csv")
+
+          # The language cookie must only be set by an explicit ?lang=.
+          assert "waca_path_lang" in client.get("/ui/users/?lang=en").headers.get("set-cookie", "")
+          print("OK language cookie")
+          PY
