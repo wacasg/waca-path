@@ -5,7 +5,6 @@
   "app.lang.en": "English",
   "app.lang.switch": "言語を切り替える",
   "app.source": "データソース",
-
   "users.title": "ユーザー一覧",
   "users.subtitle": "WACA core の micro_user_table を集計して表示します",
   "users.filter.period": "期間",
@@ -28,7 +27,6 @@
   "users.preset.clarity.tip": "Clarity 録画を 1 本でも持つユーザー。ユーザー単位の判定なので、該当ユーザーの全セッションに録画があるとは限りません（録画の有無はセッションごとに詳細画面で確認してください）",
   "users.preset.multi_session": "複数回訪問",
   "users.preset.multi_session.tip": "期間内に 2 セッション以上あるユーザー",
-
   "users.col.last_active": "最終活動",
   "users.col.first_touch": "初回接触",
   "users.col.user_id": "user_id",
@@ -43,11 +41,10 @@
   "users.col.country": "国",
   "users.col.region": "地域",
   "users.col.clarity": "Clarity 録画あり(ユーザー単位)",
-
   "users.empty": "対象期間にユーザーが見つかりません。期間または絞り込みを変えてください。",
+  "users.empty.stale": "選択期間のデータがまだ存在しません。データは下記の日付までしかありません（上流の日次バッチが停止している可能性があります）。",
   "users.error.bq": "BigQuery クエリに失敗しました。管理者またはログを確認してください。",
   "users.rows.more": "さらに読み込む",
-
   "segment.label": "セグメント",
   "segment.select.placeholder": "（保存済みから選択）",
   "segment.save": "＋ 現在の条件を保存",
@@ -70,7 +67,6 @@
   "segment.current.none": "絞り込みなし（全件）",
   "segment.option.saved_at": "{name}（{date} 保存）",
   "segment.storage_note": "セグメントは<strong>この端末のブラウザにのみ</strong>保存されます。別の PC で使う・共有するときは「📤 書き出し」で JSON を保存してください。",
-
   "csv.button": "⬇ CSV 出力",
   "csv.button.busy": "⏳ 生成中…",
   "csv.button.tip": "いまの絞り込み結果を CSV でダウンロードします（最大 {max} 行）",
@@ -78,7 +74,6 @@
   "csv.truncated": "⚠ 上限に達したため {rows} 行で打ち切りました。期間や絞り込みを狭めて再取得してください",
   "csv.failed": "CSV の生成に失敗しました",
   "csv.truncated_note": "# 注意: 上限 {max} 行で打ち切りました。期間や絞り込みを狭めて再取得してください。",
-
   "detail.back": "← ユーザー一覧に戻る",
   "detail.profile": "プロフィール",
   "detail.totals": "集計",
@@ -90,7 +85,6 @@
   "detail.landing": "ランディング",
   "detail.exit": "離脱",
   "detail.empty": "対象期間にセッションがありません。",
-
   "clarity.legend.title": "Clarity 録画について",
   "clarity.legend.body": "Clarity のセッション区切りは GA4 と一致しません（GA4 は 30 分無操作・日跨ぎで切りますが Clarity は切りません）。そのため <strong>1 本の録画が複数のセッション行に付くこと</strong>があり、録画の内容がその行の経路と完全には一致しない場合があります。正確に突き合わせるときは、録画の横の ID をコピーして Clarity 側で絞り込んでください。",
   "clarity.open": "🎥 Clarity 録画",
@@ -104,7 +98,6 @@
   "clarity.shared.tip": "Clarity のセッション区切りは GA4 の ga_session_id と一致しません。この録画は表示期間内の {count} 個の GA4 セッションに跨って紐づいているため、この行の内容だけが映っているとは限りません。表示期間を広げるとこの数は増えることがあります。",
   "clarity.multi": "録画 {count} 本",
   "clarity.multi.tip": "このセッションには Clarity 録画が {count} 本紐づいています。GA4 と Clarity のセッション区切りが違うため、どれか 1 本がこのセッション全体とは限りません。ID を Clarity 側に貼って突き合わせてください。",
-
   "value.yes": "はい",
   "value.no": "いいえ",
   "value.unknown": "不明"

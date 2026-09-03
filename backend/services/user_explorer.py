@@ -309,6 +309,38 @@ LIMIT @page_size
     return sql, params
 
 
+def build_max_event_date_sql(project: str, dataset: str) -> str:
+    """micro_user_table に入っている最新 event_date を取る SQL。
+
+    [DATA-FRESHNESS] (2026-09-03): 上流バッチが壊れて出力テーブルが古い月ぶんだけに
+    なると、UI は「該当なし」とだけ出して原因を一切伝えない。実際 2026-09-02 に
+    上流の破壊的リビルドが先頭月だけ実行されて止まり、micro_user_table の
+    max(event_date) が 5 か月前で固定されたまま、画面上は単なる空表として
+    半日以上放置された。空表の理由が「絞り込み過ぎ」なのか「データが無い」のかを
+    利用者が区別できるようにする。
+    """
+    project = validate_identifier(project, "project")
+    dataset = validate_identifier(dataset, "dataset")
+    return f"SELECT MAX(event_date) AS max_event_date FROM `{project}.{dataset}.micro_user_table`"
+
+
+async def max_event_date(*, project: str, dataset: str) -> date | None:
+    """テーブル内の最新 event_date。取得に失敗したら None (UI は注記を出さない)。"""
+
+    def _run() -> date | None:
+        client = _client(project)
+        for row in client.query(build_max_event_date_sql(project, dataset)).result():
+            return row["max_event_date"]
+        return None
+
+    try:
+        return await asyncio.to_thread(_run)
+    except Exception:
+        # 鮮度注記は補助情報にすぎない。ここでの失敗で一覧表示まで壊さない。
+        logger.exception("max event_date lookup failed")
+        return None
+
+
 async def list_users(
     *, project: str, dataset: str, filters: UserListFilters
 ) -> list[UserListRow]:

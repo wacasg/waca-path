@@ -5,7 +5,6 @@
   "app.lang.en": "English",
   "app.lang.switch": "Switch language",
   "app.source": "Data source",
-
   "users.title": "Users",
   "users.subtitle": "Aggregated from the micro_user_table produced by WACA core",
   "users.filter.period": "Period",
@@ -28,7 +27,6 @@
   "users.preset.clarity.tip": "Users with at least one Clarity recording. This is judged per user, so not every session of a matching user has a recording (check each session on the detail page).",
   "users.preset.multi_session": "Repeat visitors",
   "users.preset.multi_session.tip": "Users with two or more sessions in the period",
-
   "users.col.last_active": "Last active",
   "users.col.first_touch": "First touch",
   "users.col.user_id": "user_id",
@@ -43,11 +41,10 @@
   "users.col.country": "Country",
   "users.col.region": "Region",
   "users.col.clarity": "Has Clarity recording (per user)",
-
   "users.empty": "No users found in this period. Try a different period or filter.",
+  "users.empty.stale": "No data exists for this period yet. The dataset only goes up to the date below - the upstream daily batch may have stopped.",
   "users.error.bq": "The BigQuery request failed. Check the logs or ask your administrator.",
   "users.rows.more": "Load more",
-
   "segment.label": "Segments",
   "segment.select.placeholder": "(choose a saved segment)",
   "segment.save": "+ Save current filters",
@@ -70,7 +67,6 @@
   "segment.current.none": "No filters (all users)",
   "segment.option.saved_at": "{name} (saved {date})",
   "segment.storage_note": "Segments are stored <strong>only in this browser on this device</strong>. To use them elsewhere, or to share them, export them as JSON with \"📤 Export\".",
-
   "csv.button": "⬇ Export CSV",
   "csv.button.busy": "⏳ Preparing…",
   "csv.button.tip": "Download the current filtered result as CSV (up to {max} rows)",
@@ -78,7 +74,6 @@
   "csv.truncated": "⚠ Stopped at the {rows}-row limit. Narrow the period or filters and try again.",
   "csv.failed": "Could not generate the CSV",
   "csv.truncated_note": "# Note: stopped at the {max}-row limit. Narrow the period or filters and export again.",
-
   "detail.back": "← Back to users",
   "detail.profile": "Profile",
   "detail.totals": "Totals",
@@ -90,7 +85,6 @@
   "detail.landing": "Landing",
   "detail.exit": "Exit",
   "detail.empty": "No sessions in this period.",
-
   "clarity.legend.title": "About Clarity recordings",
   "clarity.legend.body": "Clarity does not split sessions the way GA4 does (GA4 starts a new session after 30 minutes of inactivity and at midnight; Clarity does not). As a result <strong>one recording can be attached to several session rows</strong>, and a recording may not match that row's path exactly. To line them up precisely, copy the IDs next to the recording and filter by them inside Clarity.",
   "clarity.open": "🎥 Clarity recording",
@@ -104,7 +98,6 @@
   "clarity.shared.tip": "Clarity session boundaries do not match GA4's ga_session_id. This recording is attached to {count} GA4 sessions inside the displayed period, so it does not necessarily show only this row. Widening the period can increase this number.",
   "clarity.multi": "{count} recordings",
   "clarity.multi.tip": "This session has {count} Clarity recordings attached. Because GA4 and Clarity split sessions differently, no single one necessarily covers the whole session. Use the IDs to line them up inside Clarity.",
-
   "value.yes": "Yes",
   "value.no": "No",
   "value.unknown": "Unknown"

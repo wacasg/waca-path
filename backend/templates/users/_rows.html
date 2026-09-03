@@ -27,5 +27,11 @@
     </tr>
   {% endfor %}
 {% else %}
-  <tr><td colspan="20" class="muted" style="padding:1rem;">{{ t('users.empty') }}</td></tr>
+  {# [DATA-FRESHNESS] 2026-09-03: 空表の理由を区別する。stale_until が入っている場合、
+     絞り込みの問題ではなく上流バッチ由来のデータ欠落なので、その旨と最新日を出す。 #}
+  {% if stale_until %}
+    <tr><td colspan="20" class="muted" style="padding:1rem;">{{ t('users.empty.stale') }} ({{ stale_until }})</td></tr>
+  {% else %}
+    <tr><td colspan="20" class="muted" style="padding:1rem;">{{ t('users.empty') }}</td></tr>
+  {% endif %}
 {% endif %}

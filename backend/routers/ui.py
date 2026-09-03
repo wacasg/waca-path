@@ -23,7 +23,7 @@ from services.config import (
     load_tenant_config,
     project_and_dataset,
 )
-from services.user_explorer import get_user_detail, list_users
+from services.user_explorer import get_user_detail, list_users, max_event_date
 from services.user_filters import (
     NUMERIC_COLS,
     SORTABLE_COLS,
@@ -123,10 +123,26 @@ async def users_index(request: Request) -> Response:
         logger.exception("users list query failed")
         error = "users.error.bq"
 
+    # [DATA-FRESHNESS] (2026-09-03): 結果が 0 件のとき、それが「絞り込みの結果」なのか
+    # 「そもそも選択期間のデータが存在しない」のかを利用者に区別させる。上流バッチが
+    # 壊れて出力テーブルが数か月前で止まっていても、従来の UI は単なる空表しか出さず
+    # 誰も気付けなかった (2026-09-02 実観測)。
+    stale_until: str | None = None
+    if not rows and error is None:
+        latest = await max_event_date(project=project, dataset=dataset)
+        if latest is not None and latest < filters.date_from:
+            stale_until = latest.isoformat()
+            logger.warning(
+                "users list empty because data is stale: max_event_date=%s < date_from=%s",
+                latest,
+                filters.date_from,
+            )
+
     context = _base_context(request, lang, config, project, dataset)
     context.update(
         {
             "rows": rows,
+            "stale_until": stale_until,
             "filters": filters,
             "date_from": filters.date_from.isoformat(),
             "date_to": filters.date_to.isoformat(),
