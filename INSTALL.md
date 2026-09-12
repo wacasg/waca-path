@@ -131,11 +131,16 @@ gcloud run deploy waca-path-backend \
   --set-env-vars=GOOGLE_CLOUD_PROJECT=your-gcp-project-id,WACA_CORE_DATASET=waca_core_output,DEFAULT_TENANT_ID=example
 ```
 
-Call it with an identity token:
+Call it with an identity token. Use `/openapi.json` (or `/docs`) for the
+check: on Cloud Run a request to exactly `/healthz` is answered with a 404 by
+Google's front end before it reaches the container, while every other path,
+including `/healthz/`, is forwarded normally.
 
 ```bash
 URL="$(gcloud run services describe waca-path-backend --region="${WACA_PATH_LOCATION:-asia-northeast1}" --format='value(status.url)')"
-curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "${URL}/healthz"
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(gcloud auth print-identity-token)" "${URL}/openapi.json"
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" -X POST "${URL}/api/agent/site-audit" \
+  -H 'Content-Type: application/json' -d '{"user_pseudo_id":"anon_user_001"}'
 ```
 
 `--no-allow-unauthenticated` blocks anonymous callers. Grant invokers the Cloud
@@ -352,11 +357,15 @@ gcloud run deploy waca-path-backend \
   --set-env-vars=GOOGLE_CLOUD_PROJECT=your-gcp-project-id,WACA_CORE_DATASET=waca_core_output,DEFAULT_TENANT_ID=example
 ```
 
-identity token を付けて呼び出します。
+identity token を付けて呼び出します。疎通確認には `/openapi.json`（または `/docs`）を
+使ってください。Cloud Run では `/healthz` ちょうどへの request だけが Google の front end で
+404 になり container に届きません（`/healthz/` を含む他の path は通常どおり転送されます）。
 
 ```bash
 URL="$(gcloud run services describe waca-path-backend --region="${WACA_PATH_LOCATION:-asia-northeast1}" --format='value(status.url)')"
-curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "${URL}/healthz"
+curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $(gcloud auth print-identity-token)" "${URL}/openapi.json"
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" -X POST "${URL}/api/agent/site-audit" \
+  -H 'Content-Type: application/json' -d '{"user_pseudo_id":"anon_user_001"}'
 ```
 
 `--no-allow-unauthenticated` で匿名アクセスを遮断します。呼び出し元には Cloud Run

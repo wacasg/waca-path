@@ -26,7 +26,9 @@ This project adheres to [Semantic Versioning](https://semver.org/).
   offers 3.13 and 3.14 only) and
   `.gcloudignore`, and the guide deploys from
   the repository root with a dedicated runtime service account and shows how to
-  call the private service with an identity token.
+  call the private service with an identity token. The check uses
+  `/openapi.json`: on Cloud Run a request to exactly `/healthz` is answered
+  404 by Google's front end and never reaches the container.
 - **`scripts/install_smoke_check.sh` failed after following INSTALL.md
   section 4.** Starting the backend writes `backend/__pycache__`, which the
   cache-directory guard then reported as an error. The guard now checks the Git
