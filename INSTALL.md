@@ -109,21 +109,33 @@ The backend is a FastAPI app. To run it on Cloud Run it must listen on the port
 Cloud Run injects as `$PORT`, and you must put access control in front of it —
 the API has no built-in authentication.
 
-Add a one-line `Procfile` next to `backend/main.py`:
+The backend resolves `tenant_config/` and `backend/templates/` relative to the
+repository root, so deploy from the repository root, not from `backend/`. The
+repository ships the three files Cloud Run source deploy needs at the root:
+`Procfile` (starts uvicorn inside `backend/`), `requirements.txt` (includes
+`backend/requirements.txt`), `.python-version` (pins the buildpack to Python
+3.13; the pinned `pydantic-core` has no wheel for the buildpack default, 3.14,
+and the from-source build fails. The Cloud Run builder offers 3.13 and 3.14 only), and `.gcloudignore` (keeps `.venv`, tests and
+caches out of the upload).
 
-```text
-web: uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-Deploy from the `backend` directory and keep it private:
+Deploy from the repository root with a dedicated runtime service account and
+keep the service private:
 
 ```bash
-cd backend
+SA="waca-path-backend@your-gcp-project-id.iam.gserviceaccount.com"
 gcloud run deploy waca-path-backend \
   --source=. \
   --region="${WACA_PATH_LOCATION:-asia-northeast1}" \
   --no-allow-unauthenticated \
+  --service-account="${SA}" \
   --set-env-vars=GOOGLE_CLOUD_PROJECT=your-gcp-project-id,WACA_CORE_DATASET=waca_core_output,DEFAULT_TENANT_ID=example
+```
+
+Call it with an identity token:
+
+```bash
+URL="$(gcloud run services describe waca-path-backend --region="${WACA_PATH_LOCATION:-asia-northeast1}" --format='value(status.url)')"
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "${URL}/healthz"
 ```
 
 `--no-allow-unauthenticated` blocks anonymous callers. Grant invokers the Cloud
@@ -147,14 +159,13 @@ columns (the backend selects them):
 | `user_id` | STRING | nullable |
 | `ga_session_id` | INT64 | |
 | `page_location` | STRING | |
-| `clean_page_path` | STRING | |
 | `page_title` | STRING | |
 | `engagement_time_msec` | INT64 | |
 | `device_category` | STRING | |
 | `browser` | STRING | |
 | `country` | STRING | |
 | `region` | STRING | |
-| `is_key_event` | BOOL | |
+| `is_key_event` | INT64 or BOOL | WACA core writes `INT64` (0/1); the sample uses `BOOL`. Truthy values count as key events. |
 
 ### BigQuery authentication and required IAM
 
@@ -322,21 +333,30 @@ backend は FastAPI app です。Cloud Run で動かす場合、Cloud Run が注
 で listen する必要があり、かつ前段にアクセス制御を置く必要があります（API は認証
 機構を持ちません）。
 
-`backend/main.py` の隣に 1 行の `Procfile` を置きます。
+backend は `tenant_config/` と `backend/templates/` を repository root からの相対
+path で解決するため、`backend/` ではなく repository root からデプロイします。Cloud Run の
+source deploy に必要な 4 file（`Procfile`、`requirements.txt`、`.python-version`、
+`.gcloudignore`）は repository root に同梱しています。`.python-version` は buildpack の
+Python を 3.13 に固定します（既定の 3.14 では pinned `pydantic-core` の wheel が無く
+source build に失敗します。Cloud Run builder が提供するのは 3.13 と 3.14 のみです）。
 
-```text
-web: uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-`backend` ディレクトリからデプロイし、非公開のままにします。
+専用の runtime service account を指定し、非公開のままデプロイします。
 
 ```bash
-cd backend
+SA="waca-path-backend@your-gcp-project-id.iam.gserviceaccount.com"
 gcloud run deploy waca-path-backend \
   --source=. \
   --region="${WACA_PATH_LOCATION:-asia-northeast1}" \
   --no-allow-unauthenticated \
+  --service-account="${SA}" \
   --set-env-vars=GOOGLE_CLOUD_PROJECT=your-gcp-project-id,WACA_CORE_DATASET=waca_core_output,DEFAULT_TENANT_ID=example
+```
+
+identity token を付けて呼び出します。
+
+```bash
+URL="$(gcloud run services describe waca-path-backend --region="${WACA_PATH_LOCATION:-asia-northeast1}" --format='value(status.url)')"
+curl -s -H "Authorization: Bearer $(gcloud auth print-identity-token)" "${URL}/healthz"
 ```
 
 `--no-allow-unauthenticated` で匿名アクセスを遮断します。呼び出し元には Cloud Run
@@ -360,14 +380,13 @@ runtime service account には、dataset への `roles/bigquery.dataViewer` と 
 | `user_id` | STRING | NULL 可 |
 | `ga_session_id` | INT64 | |
 | `page_location` | STRING | |
-| `clean_page_path` | STRING | |
 | `page_title` | STRING | |
 | `engagement_time_msec` | INT64 | |
 | `device_category` | STRING | |
 | `browser` | STRING | |
 | `country` | STRING | |
 | `region` | STRING | |
-| `is_key_event` | BOOL | |
+| `is_key_event` | INT64 or BOOL | WACA core writes `INT64` (0/1); the sample uses `BOOL`. Truthy values count as key events. |
 
 #### BigQuery 認証と必要な IAM
 

@@ -1,0 +1,12 @@
+# Files excluded from `gcloud run deploy --source=.`
+.git
+.gitignore
+.github
+.claude
+backend/.venv
+**/__pycache__
+.pytest_cache
+tests
+.env
+*.log
+.DS_Store

@@ -3,6 +3,36 @@
 All notable changes to WACA path are recorded here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`POST /api/agent/site-audit` returned 400 against every real WACA core
+  output.** The query selected `clean_page_path`, which the public WACA core
+  `micro_user_table` does not have (BigQuery: `Unrecognized name:
+  clean_page_path`). The column was never used by the response, which is built
+  from `page_location`, so it is no longer selected. Found on the first
+  real-data call after installing WACA core and WACA path on a fresh Google
+  Cloud project (cvrlabo.com, 2026-09-12). INSTALL.md's required-column table
+  no longer lists it, and notes that `is_key_event` may be `INT64` (WACA core)
+  or `BOOL` (sample).
+- **INSTALL.md section 7 deployed a Cloud Run service that could not start.**
+  It deployed `--source=.` from `backend/`, but the app resolves
+  `tenant_config/` and `backend/templates/` relative to the repository root, so
+  every tenant lookup and UI render failed inside the container. The repository
+  now ships a root `Procfile`, `requirements.txt` (which includes
+  `backend/requirements.txt`), `.python-version` (3.13: the buildpack default,
+  3.14, has no `pydantic-core` wheel and the Rust build fails; the builder
+  offers 3.13 and 3.14 only) and
+  `.gcloudignore`, and the guide deploys from
+  the repository root with a dedicated runtime service account and shows how to
+  call the private service with an identity token.
+- **`scripts/install_smoke_check.sh` failed after following INSTALL.md
+  section 4.** Starting the backend writes `backend/__pycache__`, which the
+  cache-directory guard then reported as an error. The guard now checks the Git
+  index (committed files) when run inside a repository, and prunes `.venv`
+  otherwise.
+
 ## [0.2.0] - 2026-08-21
 
 ### Added
