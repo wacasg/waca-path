@@ -15,7 +15,7 @@ from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from i18n import LANG_COOKIE, SUPPORTED_LANGS, make_translator, negotiate_lang, normalize_lang
-from services import csv_export, journey, path_stats
+from services import ai_summary, csv_export, journey, journey_context, path_stats
 from services.config import (
     TEMPLATE_DIR,
     custom_columns,
@@ -312,17 +312,29 @@ async def user_journey_page(user_pseudo_id: str, request: Request) -> Response:
         logger.exception("user journey query failed")
         error = "users.error.bq"
 
+    # Journey context ("タイムライン情報") is pure Python over the same rows.
+    jctx = journey_context.build_context(data, config) if error is None else None
+
     tenant_id = request.query_params.get("tenant") or default_tenant_id()
+    api_base = f"/api/users/{quote(user_pseudo_id, safe='')}/journey"
+    api_query = urlencode({"tenant_id": tenant_id, "max_rows": max_rows})
+    # The AI button exists in the HTML only when the server has a provider AND
+    # its key. A fresh install shows nothing AI-related at all.
+    ai_status = ai_summary.public_status()
     context = _base_context(request, lang, config, project, dataset)
     context.update(
         {
             "journey": data,
+            "journey_context": jctx,
             "max_rows": max_rows,
             "error": error,
-            "api_url": (
-                f"/api/users/{quote(user_pseudo_id, safe='')}/journey?"
-                + urlencode({"tenant_id": tenant_id, "max_rows": max_rows})
-            ),
+            "api_url": f"{api_base}?{api_query}",
+            "context_api_url": f"{api_base}/context?{api_query}",
+            "summary_api_url": f"{api_base}/summary",
+            "tenant_id": tenant_id,
+            "ai_enabled": ai_status["enabled"],
+            "ai_provider": ai_status["provider"],
+            "ai_model": ai_status["model"],
         }
     )
     response = templates.TemplateResponse(request, "users/journey.html", context)

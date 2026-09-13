@@ -1,0 +1,15 @@
+# Optional: AI summary providers for /api/users/{id}/journey/summary.
+#
+# NOT required. WACA path works completely without any of these; install only
+# the SDK for the provider you set in WACA_PATH_AI_PROVIDER:
+#
+#   pip install -r backend/requirements-ai.txt        # all three
+#   pip install anthropic                             # or just one
+#
+# Then set WACA_PATH_AI_PROVIDER=anthropic|openai|google and the matching key
+# (ANTHROPIC_API_KEY / OPENAI_API_KEY / GOOGLE_API_KEY). See INSTALL.md
+# "Optional AI summary". Lower bounds only: the code uses the stable
+# `messages.create` / `responses.create` / `models.generate_content` calls.
+anthropic>=0.40
+openai>=1.60
+google-genai>=1.0

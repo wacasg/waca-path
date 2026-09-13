@@ -7,6 +7,56 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- **Session timeline on the per-user journey page (no AI).** Each session
+  is now shown the way snowprism's user explorer shows it: one row per
+  `page_view` with the events that fired while that page was open
+  (`scroll`, `click`, `form_submit`, key events, ...) nested underneath,
+  the dwell time until the next page, and orphan events for a session that
+  has no page view at all. The JSON API keeps every v0.3.0 field and adds
+  `sessions[].timeline` and `sessions[].inference_notes`. The v0.3.0 step
+  table is still there, collapsed under "Show all events as a table".
+- **Inference notes per session (no AI).** Up to three heuristic reading
+  aids per session, ported from snowprism's `_build_session_inference_notes`
+  and extended: organic-search / paid entry, task-style landing page,
+  purchase / checkout / cart reached, key event after N pages, bounce, deep
+  session, long dwell on one page, returned to the entry page, scrolled,
+  cross-domain hop, quick mobile visit. Every note is a fixed rule with an
+  `i18n` code (`journey.note.<code>`), hedged wording, and degrades
+  gracefully when `traffic_*` / `device_category` are absent (the sample).
+- **Journey context (`タイムライン情報`), no AI.** `GET
+  /api/users/{user_pseudo_id}/journey/context` and a card on the journey
+  page: data window, pauses between sessions with 7+ day gaps flagged,
+  visited pages with counts, journey outcome (`purchase` / `checkout_abandon`
+  / `cart_abandon` / `key_event` / `view_only`), the tenant's key pages not
+  yet reached (`site.key_paths` in the tenant config - previously
+  documented as reserved, now read), device / traffic summary and a
+  one-line digest per session. Ported from the non-AI half of snowprism's
+  `collect_user_context`.
+- **Optional AI summary.** `POST /api/users/{user_pseudo_id}/journey/summary`
+  and a **Summarize with AI** button on the journey page, which exists only
+  when `WACA_PATH_AI_PROVIDER` (`anthropic` / `openai` / `google`) *and* the
+  matching key (`ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY`)
+  are set. Without them the endpoint answers **409** with a translated
+  message and the page shows nothing AI-related. The model receives only
+  the journey context and timeline digest (paths, timestamps, event names)
+  and returns a one-paragraph persona-style summary, a 3-5 stage customer
+  journey sketch (stage, evidence pages, confidence) and up to three draft
+  ideas, as JSON with `provider` / `model`. Provider SDKs are **not** in
+  `backend/requirements.txt`; they live in the optional
+  `backend/requirements-ai.txt` and are imported lazily. Defaults:
+  `claude-sonnet-4-6`, `gpt-5-mini`, `gemini-2.5-flash`
+  (`WACA_PATH_AI_MODEL` overrides), 1,200 output tokens, and a per-process
+  limit of 10 calls per minute (`WACA_PATH_AI_RATE_LIMIT_PER_MIN`). Keys
+  are never logged.
+- `tests/test_journey_timeline_ai.py`: attached-event grouping, inference
+  notes, gap analysis, expected next pages, the AI gate (env unset -> 409
+  and no button), a fake provider for the summary endpoint, i18n parity.
+- App version is now `0.4.0`.
+
+## [0.3.0] - 2026-09-13
+
+### Added
+
 - **Per-user journey (`ユーザー別経路`), rule-based and LLM-free.**
   `GET /api/users/{user_pseudo_id}/journey` returns the user's
   `micro_user_table` events grouped into sessions (by
