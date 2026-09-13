@@ -27,8 +27,8 @@ This repository is the minimal public install package for WACA path.
 | Path | Purpose |
 |---|---|
 | `backend/main.py` | FastAPI app: `/healthz`, `/api/agent/site-audit`, and the admin UI. |
-| `backend/routers/ui.py` | Read-only admin UI: users list, user detail, CSV export. |
-| `backend/services/` | BigQuery queries, filtering and paging, CSV export. |
+| `backend/routers/ui.py` | Read-only admin UI: users list, user detail, CSV export, per-user journey, common journeys. |
+| `backend/services/` | BigQuery queries, filtering and paging, CSV export, journey grouping and route aggregation (`journey.py`, `path_stats.py`). |
 | `backend/i18n/` | UI language catalogues (`ja.json`, `en.json`). |
 | `backend/templates/` | Jinja2 templates for the admin UI. |
 | `backend/requirements.txt` | Python dependencies. |
@@ -84,6 +84,14 @@ http://127.0.0.1:8080/ui/users/
   BOM so Excel opens it correctly. If the limit is reached the UI says so and a
   note is written into the file; the export is never truncated silently.
 * **User detail** - profile, totals, and one row per session.
+* **Per-user journey** (`/ui/users/<id>/journey`, `GET /api/users/<id>/journey`)
+  - the user's sessions as ordered step lists (event, page, engagement,
+  seconds since the previous step, key-event badge), the collapsed page path
+  with entry and exit page, a summary and short rule-based observations.
+  **No LLM and no API key involved.**
+* **Common journeys** (`/ui/journeys/`, `GET /api/journeys/top`) - for a
+  period, the most common page transitions, entry pages, exit pages and whole
+  session routes across all users, counted by sessions. Rule-based as well.
 
 ### Language
 
@@ -180,7 +188,7 @@ table を作成できます。
 
 | Path | 役割 |
 |---|---|
-| `backend/main.py` | `/healthz` と `/api/agent/site-audit` を持つ FastAPI backend。 |
+| `backend/main.py` | `/healthz`、`/api/agent/site-audit`、`/api/users/<id>/journey`、`/api/journeys/top` と管理 UI を持つ FastAPI backend。 |
 | `backend/requirements.txt` | Python dependencies。 |
 | `tenant_config/example.yaml` | tenant 設定例。 |
 | `samples/bigquery/create_anonymous_waca_core_output_sample.sql` | 匿名 WACA core output sample。 |
@@ -191,6 +199,15 @@ table を作成できます。
 | `CONTRIBUTING.md` | 貢献方法（DCO、Apache License 2.0）。 |
 | `SECURITY.md` | セキュリティ報告の窓口（非公開）。 |
 | `LICENSE` | Apache License 2.0。 |
+
+### 主な機能
+
+* `/ui/users/` — `micro_user_table` を集計した読み取り専用のユーザー一覧・詳細・CSV 出力。
+* **ユーザー別経路** (`/ui/users/<id>/journey`, `GET /api/users/<id>/journey`) —
+  セッションごとのステップ一覧、経路（入口／出口）、サマリー、ルールベースの所見。
+  **LLM も API キーも使いません。**
+* **よく通る経路** (`/ui/journeys/`, `GET /api/journeys/top`) — 期間内の全セッションを
+  集計した、よく通る遷移・入口・出口・経路パターン（セッション数と割合）。
 
 ### まず試す
 
