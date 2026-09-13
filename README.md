@@ -28,7 +28,8 @@ This repository is the minimal public install package for WACA path.
 |---|---|
 | `backend/main.py` | FastAPI app: `/healthz`, `/api/agent/site-audit`, and the admin UI. |
 | `backend/routers/ui.py` | Read-only admin UI: users list, user detail, CSV export, per-user journey, common journeys. |
-| `backend/services/` | BigQuery queries, filtering and paging, CSV export, journey grouping and route aggregation (`journey.py`, `path_stats.py`). |
+| `backend/services/` | BigQuery queries, filtering and paging, CSV export, journey grouping and route aggregation (`journey.py`, `path_stats.py`), journey context (`journey_context.py`), optional AI summary (`ai_summary.py`). |
+| `backend/requirements-ai.txt` | Optional provider SDKs for the AI summary. Not needed for anything else. |
 | `backend/i18n/` | UI language catalogues (`ja.json`, `en.json`). |
 | `backend/templates/` | Jinja2 templates for the admin UI. |
 | `backend/requirements.txt` | Python dependencies. |
@@ -85,13 +86,27 @@ http://127.0.0.1:8080/ui/users/
   note is written into the file; the export is never truncated silently.
 * **User detail** - profile, totals, and one row per session.
 * **Per-user journey** (`/ui/users/<id>/journey`, `GET /api/users/<id>/journey`)
-  - the user's sessions as ordered step lists (event, page, engagement,
-  seconds since the previous step, key-event badge), the collapsed page path
-  with entry and exit page, a summary and short rule-based observations.
+  - the user's sessions as a **timeline**: one row per page view with the
+  events that fired on that page nested under it (scroll, click, form
+  submit, key events), dwell time, the collapsed page path with entry and
+  exit page, a summary, rule-based observations and up to three
+  **inference notes** per session ("arrived from organic search", "bounced
+  on the landing page", "key event after 3 pages", ...).
   **No LLM and no API key involved.**
+* **Journey context** (`GET /api/users/<id>/journey/context`, and a card on
+  the journey page) - data window, pauses between sessions with 7+ day gaps
+  flagged, visited pages, outcome, the tenant's key pages not yet reached
+  (`site.key_paths`), device / traffic summary. Rule-based as well.
 * **Common journeys** (`/ui/journeys/`, `GET /api/journeys/top`) - for a
   period, the most common page transitions, entry pages, exit pages and whole
   session routes across all users, counted by sessions. Rule-based as well.
+* **Optional AI summary** (`POST /api/users/<id>/journey/summary`) - a
+  persona-style paragraph, a 3-5 stage customer-journey sketch and up to
+  three draft ideas, generated from the journey context by Anthropic, OpenAI
+  or Google. **Off by default**: the button and the endpoint only work when
+  `WACA_PATH_AI_PROVIDER` and the provider's key are set and the optional
+  `backend/requirements-ai.txt` is installed. See INSTALL.md "Optional AI
+  summary".
 
 ### Language
 
@@ -142,9 +157,10 @@ still have sessions with no recording.
 
 ### Not included
 
-This repository is the public install package. LLM-generated personas and
-journey maps, external knowledge-base integrations, and commerce dashboards are
-not part of it.
+This repository is the public install package. The full LLM-generated persona
+and journey-map product, external knowledge-base integrations, and commerce
+dashboards are not part of it. The optional AI summary above is a small,
+provider-neutral draft generator, not that product.
 
 ## Legal Notice
 
@@ -204,10 +220,23 @@ table を作成できます。
 
 * `/ui/users/` — `micro_user_table` を集計した読み取り専用のユーザー一覧・詳細・CSV 出力。
 * **ユーザー別経路** (`/ui/users/<id>/journey`, `GET /api/users/<id>/journey`) —
-  セッションごとのステップ一覧、経路（入口／出口）、サマリー、ルールベースの所見。
+  セッションごとの**タイムライン**（ページビュー 1 行ごとに、そのページで発生した
+  scroll / click / form_submit / キーイベントを畳んで表示、滞在秒数つき）、
+  経路（入口／出口）、サマリー、ルールベースの所見、セッションごとの**推論メモ**
+  （「検索経由の流入」「入口ページで離脱」「3 ページ閲覧後にキーイベント」など、最大 3 件）。
   **LLM も API キーも使いません。**
+* **タイムライン情報** (`GET /api/users/<id>/journey/context`、経路画面のカード) —
+  データ範囲、セッション間隔（7 日以上を明示）、閲覧ページ、到達状況、
+  tenant_config の `site.key_paths` のうち未到達の重要ページ、デバイス／流入の要約。
+  これもルールベースです。
 * **よく通る経路** (`/ui/journeys/`, `GET /api/journeys/top`) — 期間内の全セッションを
   集計した、よく通る遷移・入口・出口・経路パターン（セッション数と割合）。
+* **AI 要約（任意）** (`POST /api/users/<id>/journey/summary`) — タイムライン情報を
+  Anthropic / OpenAI / Google のモデルに渡して、ペルソナ要約 1 段落・3〜5 段階の
+  Customer Journey スケッチ・最大 3 件の施策案（下書き）を生成します。
+  **既定では無効**で、`WACA_PATH_AI_PROVIDER` と対応する API キーを設定し、任意の
+  `backend/requirements-ai.txt` を入れたときだけボタンと API が有効になります。
+  INSTALL.md「AI 要約（任意）」を参照してください。
 
 ### まず試す
 

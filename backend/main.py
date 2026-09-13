@@ -10,15 +10,15 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import date
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from i18n import SUPPORTED_LANGS
+from i18n import SUPPORTED_LANGS, normalize_lang, translate
 from routers import ui as ui_router
-from services import journey, path_stats
+from services import ai_summary, journey, journey_context, path_stats
 from services.config import (
     default_tenant_id,
     load_tenant_config,
@@ -32,7 +32,7 @@ logger = logging.getLogger("waca_path_backend")
 app = FastAPI(
     title="WACA path backend",
     description="Public site-audit backend and read-only admin UI for WACA core output.",
-    version="0.3.0",
+    version="0.4.0",
 )
 
 app.include_router(ui_router.router)
@@ -229,6 +229,104 @@ async def user_journey(
         langs=SUPPORTED_LANGS,
     )
     return {"tenant_id": tenant, **data}
+
+
+@app.get("/api/users/{user_pseudo_id}/journey/context", tags=["users"])
+async def user_journey_context(
+    user_pseudo_id: str,
+    tenant_id: str | None = Query(default=None, max_length=128),
+    max_rows: int = Query(default=journey.DEFAULT_MAX_ROWS, ge=1, le=journey.MAX_ROWS_LIMIT),
+) -> dict[str, Any]:
+    """Journey context ("タイムライン情報"), rule-based and LLM-free.
+
+    Data window, pauses between sessions (7+ days flagged as long gaps),
+    visited pages, the tenant's key pages not yet reached
+    (``site.key_paths`` in the tenant config), device / traffic summary and a
+    one-line digest per session. ``ai`` says whether the optional AI summary
+    is configured on this install; it never contains a key.
+    """
+    if not user_pseudo_id or len(user_pseudo_id) > journey.PSEUDO_ID_MAX:
+        raise HTTPException(status_code=400, detail="Invalid user_pseudo_id")
+    tenant = tenant_id or default_tenant_id()
+    config = _load_tenant_config(tenant)
+    project, dataset = _project_and_dataset(config)
+    data = await journey.get_user_journey(
+        project=project,
+        dataset=dataset,
+        user_pseudo_id=user_pseudo_id,
+        max_rows=max_rows,
+        langs=SUPPORTED_LANGS,
+    )
+    context = journey_context.build_context(data, config)
+    return {
+        "tenant_id": tenant,
+        "source": data.get("source"),
+        **context,
+        "ai": ai_summary.public_status(),
+    }
+
+
+class JourneySummaryRequest(BaseModel):
+    tenant_id: str = Field(default_factory=default_tenant_id, max_length=128)
+    max_rows: int = Field(default=journey.DEFAULT_MAX_ROWS, ge=1, le=journey.MAX_ROWS_LIMIT)
+    lang: str = Field(default="ja", max_length=8)
+
+
+def _ai_error_detail(exc: ai_summary.AIError, lang: str) -> dict[str, Any]:
+    key = f"ai.error.{exc.code}"
+    return {
+        "code": exc.code,
+        "message": translate(key, lang),
+        "message_i18n": {code: translate(key, code) for code in SUPPORTED_LANGS},
+    }
+
+
+@app.post("/api/users/{user_pseudo_id}/journey/summary", tags=["users"], status_code=200)
+async def user_journey_summary(user_pseudo_id: str, req: JourneySummaryRequest) -> dict[str, Any]:
+    """Optional AI summary of the journey (persona-style paragraph, 3-5 stage
+    customer-journey sketch, up to 3 draft ideas).
+
+    Only works when ``WACA_PATH_AI_PROVIDER`` names a provider *and* that
+    provider's API key is set; otherwise **409** with an i18n message and the
+    UI hides the button. The model sees only the journey context and timeline
+    digest (paths, timestamps, event names). Per-process rate limit: 10 calls
+    per minute by default (**429** beyond that). SDK missing: **503**.
+    Provider failure: **502**.
+    """
+    if not user_pseudo_id or len(user_pseudo_id) > journey.PSEUDO_ID_MAX:
+        raise HTTPException(status_code=400, detail="Invalid user_pseudo_id")
+    lang = normalize_lang(req.lang) or "ja"
+    if not ai_summary.is_enabled():
+        raise HTTPException(status_code=409, detail=_ai_error_detail(ai_summary.AIDisabled(), lang))
+
+    config = _load_tenant_config(req.tenant_id)
+    project, dataset = _project_and_dataset(config)
+    data = await journey.get_user_journey(
+        project=project,
+        dataset=dataset,
+        user_pseudo_id=user_pseudo_id,
+        max_rows=req.max_rows,
+        langs=SUPPORTED_LANGS,
+    )
+    context = journey_context.build_context(data, config)
+    try:
+        result = await ai_summary.summarize(context, data, lang=lang)
+    except ai_summary.AIDisabled as exc:
+        raise HTTPException(status_code=409, detail=_ai_error_detail(exc, lang)) from exc
+    except ai_summary.AIRateLimited as exc:
+        raise HTTPException(status_code=429, detail=_ai_error_detail(exc, lang)) from exc
+    except ai_summary.AISDKMissing as exc:
+        raise HTTPException(status_code=503, detail=_ai_error_detail(exc, lang)) from exc
+    except ai_summary.AIProviderError as exc:
+        raise HTTPException(status_code=502, detail=_ai_error_detail(exc, lang)) from exc
+    return {
+        "tenant_id": req.tenant_id,
+        "user_pseudo_id": user_pseudo_id,
+        "source": data.get("source"),
+        "generated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "disclaimer": translate("ai.disclaimer", lang),
+        **result,
+    }
 
 
 @app.get("/api/journeys/top", tags=["users"])

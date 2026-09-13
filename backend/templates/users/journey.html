@@ -21,6 +21,50 @@
   .obs { margin: 0; padding-left: 1.2rem; }
   .obs li { margin: .15rem 0; }
   .note { font-size: 12px; color: var(--muted); }
+
+  /* ---- Inference notes (per session) ---- */
+  .notes { margin: .3rem 0 .5rem; padding: .4rem .6rem; border: 1px solid #bcd8f5; background: #f4f9ff; border-radius: 5px; font-size: 12px; }
+  .notes .notes-title { font-weight: 700; color: #1f5fa8; margin-right: .4rem; }
+  .notes ul { margin: .2rem 0 0; padding-left: 1.1rem; }
+  .notes li { margin: .1rem 0; }
+
+  /* ---- Timeline: one block per page view, attached events nested ---- */
+  .timeline { margin-top: .3rem; }
+  .tl-pv { padding: .45rem .5rem; border-radius: 4px; }
+  .tl-pv:nth-child(even) { background: #f6f8fa; }
+  .tl-pv.tl-pv--key { background: var(--ok-bg); border-left: 3px solid var(--ok); }
+  .tl-pv-head { display: flex; gap: .6rem; align-items: baseline; flex-wrap: wrap; }
+  .tl-time { color: var(--muted); font-size: 12px; min-width: 4.6rem; }
+  .tl-num { color: var(--muted); font-size: 11px; white-space: nowrap; }
+  .tl-pv-title { font-weight: 600; font-size: 13px; }
+  .tl-pv-path { font-size: 12px; margin-left: 5.2rem; }
+  .tl-pv-subs { font-size: 11px; color: var(--muted); margin-left: 5.2rem; display: flex; gap: .6rem; flex-wrap: wrap; }
+  .tl-attached { margin: .25rem 0 0 5.2rem; padding: .2rem .5rem; background: #eef1f5; border-radius: 4px; }
+  .tl-pv:nth-child(even) .tl-attached { background: #e6eaf0; }
+  .tl-attached-title { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  .tl-event { display: flex; gap: .6rem; align-items: baseline; font-size: 12px; padding: .1rem .2rem; }
+  .tl-event-name { font-weight: 600; }
+  .tl-orphan { margin: .2rem 0; padding: .25rem .5rem; background: var(--warn-bg); border-radius: 4px; }
+  details.raw { margin-top: .4rem; }
+  details.raw summary { cursor: pointer; font-size: 12px; color: var(--muted); }
+
+  /* ---- Journey context ---- */
+  .ctx-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: .6rem .9rem; }
+  .ctx-block h4 { margin: 0 0 .2rem; font-size: 12px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .ctx-block ul { margin: 0; padding-left: 1.1rem; font-size: 12px; }
+  .ctx-block li { margin: .1rem 0; }
+  .ctx-block .big { font-size: 13px; }
+
+  /* ---- AI summary ---- */
+  .ai-card { border-color: #d9c7f5; background: #faf7ff; }
+  .ai-result h4 { margin: .6rem 0 .2rem; font-size: 13px; }
+  .ai-stages { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: .5rem; }
+  .ai-stage { border: 1px solid var(--line); border-radius: 5px; padding: .45rem .6rem; background: #fff; font-size: 12px; }
+  .ai-stage .stage-name { font-weight: 700; font-size: 13px; }
+  .ai-stage .stage-conf { float: right; }
+  .ai-stage code { background: var(--accent-bg); border-radius: 3px; padding: 0 .3rem; }
+  .ai-err { color: #a40e26; font-size: 12px; margin-top: .4rem; }
+  .ai-disclaimer { font-size: 11px; color: var(--muted); margin-top: .5rem; }
 </style>
 {% endblock %}
 
@@ -71,6 +115,191 @@
   </ul>
 </div>
 
+{# ---------------- Journey context ("タイムライン情報"), rule-based ---------------- #}
+{% if journey_context %}
+{% set ctx = journey_context %}
+<div class="card">
+  <strong>{{ t('journey.context') }}</strong>
+  <p class="note" style="margin:.2rem 0 .5rem;">{{ t('journey.context.note') }}
+    {{ t('journey.context.api.hint') }}<a href="{{ context_api_url }}"><code>GET …/journey/context</code></a></p>
+  <div class="ctx-grid">
+    <div class="ctx-block">
+      <h4>{{ t('journey.context.window') }}</h4>
+      {% set w = ctx.data_window %}
+      <div class="big">{{ t('journey.context.window.value', first=w.first_touch or '-', last=w.last_active or '-', days=w.span_days if w.span_days is not none else '-', sessions=w.sessions_count, events=w.events_count) }}</div>
+      <div class="big" style="margin-top:.2rem;">
+        <span class="muted">{{ t('journey.context.outcome') }}:</span>
+        {% if ctx.journey_outcome in ('purchase', 'key_event') %}
+          <span class="badge badge-ok">{{ t('journey.context.outcome.' ~ ctx.journey_outcome) }}</span>
+        {% elif ctx.journey_outcome == 'view_only' %}
+          <span class="badge">{{ t('journey.context.outcome.' ~ ctx.journey_outcome) }}</span>
+        {% else %}
+          <span class="badge badge-warn">{{ t('journey.context.outcome.' ~ ctx.journey_outcome) }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    <div class="ctx-block">
+      <h4>{{ t('journey.context.gaps') }}</h4>
+      {% set g = ctx.session_gaps %}
+      {% if not g.gaps %}
+        <div class="muted" style="font-size:12px;">{{ t('journey.context.gaps.none') }}</div>
+      {% else %}
+        <div class="big">{{ t('journey.context.gaps.summary', max=g.max_gap_days, count=g.long_gaps | length, threshold=g.threshold_days | int) }}</div>
+        {% if g.long_gaps %}
+          <ul>
+            {% for lg in g.long_gaps %}
+              <li>{{ t('journey.context.gaps.long', **{'from': lg.from_session_no, 'to': lg.to_session_no, 'days': lg.gap_days}) }}</li>
+            {% endfor %}
+          </ul>
+        {% endif %}
+      {% endif %}
+    </div>
+
+    <div class="ctx-block">
+      <h4>{{ t('journey.context.visited') }}</h4>
+      <ul>
+        {% for v in ctx.visited_paths %}
+          <li><code>{{ v.path }}</code>{% if v.title %} <span class="muted">{{ v.title | truncate(50) }}</span>{% endif %}
+            <span class="muted">— {{ t('journey.context.visited.count', pv=v.page_views, sessions=v.sessions) }}</span></li>
+        {% endfor %}
+      </ul>
+    </div>
+
+    <div class="ctx-block">
+      <h4>{{ t('journey.context.next') }}</h4>
+      <p class="note" style="margin:0 0 .2rem;">{{ t('journey.context.next.note') }}</p>
+      {% set nx = ctx.expected_next_pages %}
+      {% if nx.not_reached %}
+        <ul>
+          {% for p in nx.not_reached %}
+            <li>{% if p.url %}<a href="{{ p.url }}" target="_blank" rel="noopener noreferrer"><code>{{ p.path }}</code></a>{% else %}<code>{{ p.path }}</code>{% endif %}</li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <div class="muted" style="font-size:12px;">{{ t('journey.context.next.none') }}</div>
+      {% endif %}
+      {% if nx.reached %}
+        <div class="note">{{ t('journey.context.next.reached', paths=nx.reached | join(', ')) }}</div>
+      {% endif %}
+    </div>
+
+    <div class="ctx-block">
+      <h4>{{ t('journey.context.device') }}</h4>
+      {% set d = ctx.device_and_traffic %}
+      {% if d.devices or d.browsers or d.traffic %}
+        <ul>
+          {% for item in d.devices %}<li>{{ item.value }} <span class="muted">× {{ item.sessions }}</span></li>{% endfor %}
+          {% for item in d.browsers %}<li>{{ item.value }} <span class="muted">× {{ item.sessions }}</span></li>{% endfor %}
+          {% for item in d.traffic %}<li>{{ item.value }} <span class="muted">× {{ item.sessions }}</span></li>{% endfor %}
+        </ul>
+      {% else %}
+        <div class="muted" style="font-size:12px;">{{ t('journey.context.device.none') }}</div>
+      {% endif %}
+      {% if d.last_hour_of_day is not none %}
+        <div class="note">{{ t('journey.context.last_active', weekday=d.last_weekday, hour=d.last_hour_of_day) }}</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+{# ---------------- Optional AI summary: rendered ONLY when the server has a provider + key ---------------- #}
+{% if ai_enabled %}
+<div class="card ai-card" id="ai-summary">
+  <strong>{{ t('ai.title') }}</strong>
+  <p class="note" style="margin:.2rem 0 .5rem;">{{ t('ai.note', provider=ai_provider, model=ai_model) }}</p>
+  <button type="button" class="btn" id="ai-summary-btn"
+          data-url="{{ summary_api_url }}"
+          data-tenant="{{ tenant_id }}"
+          data-max-rows="{{ max_rows }}"
+          data-lang="{{ lang }}"
+          data-label="{{ t('ai.button') }}"
+          data-label-busy="{{ t('ai.button.busy') }}">{{ t('ai.button') }}</button>
+  <div id="ai-summary-error" class="ai-err" hidden></div>
+  <div id="ai-summary-result" class="ai-result" hidden>
+    <h4>{{ t('ai.persona') }}</h4>
+    <p id="ai-persona" style="margin:0; font-size:13px;"></p>
+    <h4>{{ t('ai.stages') }}</h4>
+    <div id="ai-stages" class="ai-stages"></div>
+    <h4>{{ t('ai.ideas') }}</h4>
+    <ul id="ai-ideas" class="obs"></ul>
+    <div class="ai-disclaimer"><span id="ai-generated-by"></span> — {{ t('ai.disclaimer') }}</div>
+  </div>
+</div>
+<script>
+(function () {
+  var btn = document.getElementById('ai-summary-btn');
+  if (!btn) return;
+  var labels = {
+    evidence: {{ t('ai.stages.evidence') | tojson }},
+    confidence: {{ t('ai.stages.confidence') | tojson }},
+    conf: { low: {{ t('ai.confidence.low') | tojson }}, medium: {{ t('ai.confidence.medium') | tojson }}, high: {{ t('ai.confidence.high') | tojson }} },
+    failed: {{ t('ai.failed', message='__MSG__') | tojson }},
+    generatedBy: {{ t('ai.generated_by', provider='__P__', model='__M__') | tojson }}
+  };
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined && text !== null) e.textContent = String(text);
+    return e;
+  }
+  function render(data) {
+    var s = data.summary || {};
+    document.getElementById('ai-persona').textContent = s.persona_summary || '';
+    var stages = document.getElementById('ai-stages');
+    stages.textContent = '';
+    (s.journey_stages || []).forEach(function (st, i) {
+      var box = el('div', 'ai-stage');
+      var conf = el('span', 'badge stage-conf', labels.confidence + ': ' + (labels.conf[st.confidence] || st.confidence || ''));
+      box.appendChild(conf);
+      box.appendChild(el('div', 'stage-name', (i + 1) + '. ' + (st.stage || '')));
+      if (st.summary) box.appendChild(el('div', null, st.summary));
+      if (st.evidence_pages && st.evidence_pages.length) {
+        var ev = el('div', 'muted', labels.evidence + ': ');
+        st.evidence_pages.forEach(function (p, j) {
+          if (j) ev.appendChild(document.createTextNode(' '));
+          ev.appendChild(el('code', null, p));
+        });
+        box.appendChild(ev);
+      }
+      stages.appendChild(box);
+    });
+    var ideas = document.getElementById('ai-ideas');
+    ideas.textContent = '';
+    (s.improvement_ideas || []).forEach(function (idea) { ideas.appendChild(el('li', null, idea)); });
+    document.getElementById('ai-generated-by').textContent =
+      labels.generatedBy.replace('__P__', data.provider || '').replace('__M__', data.model || '');
+    document.getElementById('ai-summary-result').hidden = false;
+  }
+  btn.addEventListener('click', function () {
+    var err = document.getElementById('ai-summary-error');
+    err.hidden = true; err.textContent = '';
+    btn.disabled = true; btn.textContent = btn.dataset.labelBusy;
+    fetch(btn.dataset.url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tenant_id: btn.dataset.tenant, max_rows: parseInt(btn.dataset.maxRows, 10), lang: btn.dataset.lang })
+    }).then(function (r) {
+      return r.json().then(function (body) { return { ok: r.ok, status: r.status, body: body }; });
+    }).then(function (res) {
+      if (!res.ok) {
+        var d = res.body && res.body.detail;
+        var msg = (d && (d.message || (typeof d === 'string' ? d : ''))) || ('HTTP ' + res.status);
+        throw new Error(msg);
+      }
+      render(res.body);
+    }).catch(function (e) {
+      err.textContent = labels.failed.replace('__MSG__', e && e.message ? e.message : String(e));
+      err.hidden = false;
+    }).finally(function () {
+      btn.disabled = false; btn.textContent = btn.dataset.label;
+    });
+  });
+})();
+</script>
+{% endif %}
+{% endif %}
+
 {% if s.get('truncated') %}
   <div class="card" style="border-color:#e8d5a0; background: var(--warn-bg); color: var(--warn);">
     {{ t('journey.truncated', rows=max_rows) }}
@@ -78,6 +307,7 @@
 {% endif %}
 
 <h2>{{ t('journey.sessions') }}</h2>
+<p class="note" style="margin-top:-.3rem;">{{ t('journey.timeline.note') }}</p>
 {% if journey.sessions %}
   {% for sess in journey.sessions %}
     <div class="session">
@@ -108,42 +338,109 @@
             {{ t('journey.session.exit') }} <code>{{ sess.exit_path }}</code>)</span>
         {% endif %}
       </div>
-      <div class="table-scroll">
-        <table class="steps">
-          <thead>
-            <tr>
-              <th>{{ t('journey.step.no') }}</th>
-              <th>{{ t('journey.step.time') }}</th>
-              <th>{{ t('journey.step.elapsed') }}</th>
-              <th>{{ t('journey.step.event') }}</th>
-              <th>{{ t('journey.step.page') }}</th>
-              <th>{{ t('journey.step.engagement') }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for st in sess.steps %}
-              <tr class="{{ 'key' if st.is_key_event else '' }}">
-                <td class="num">{{ st.step_no }}</td>
-                <td class="mono">{{ st.event_timestamp.strftime('%H:%M:%S') if st.event_timestamp else '-' }}</td>
-                <td class="num">{{ ('+' ~ (st.seconds_from_prev | round(0) | int) ~ ' s') if st.seconds_from_prev is not none else '' }}</td>
-                <td>
-                  <code>{{ st.event_name }}</code>
-                  {% if st.is_key_event %}<span class="badge badge-ok">{{ t('journey.step.key_event') }}</span>{% endif %}
-                </td>
-                <td>
-                  {% if st.page_title %}{{ st.page_title }}<br>{% endif %}
-                  {% if st.page_location %}
-                    <a class="mono" href="{{ st.page_location }}" target="_blank" rel="noopener noreferrer">{{ st.page_path }}</a>
-                  {% endif %}
-                </td>
-                <td class="num">
-                  {% if st.engagement_time_msec %}{{ t('journey.step.engagement.sec', seconds=((st.engagement_time_msec or 0) / 1000) | round(1)) }}{% endif %}
-                </td>
-              </tr>
+
+      {% if sess.inference_notes %}
+        <div class="notes">
+          <span class="notes-title">{{ t('journey.notes') }}</span><span class="muted">{{ t('journey.notes.note') }}</span>
+          <ul>
+            {% for n in sess.inference_notes %}
+              <li>{{ (n.text or {}).get(lang) or (n.text or {}).get('ja') or n.code }}</li>
             {% endfor %}
-          </tbody>
-        </table>
+          </ul>
+        </div>
+      {% endif %}
+
+      {# ----- Timeline: page views with their attached events ----- #}
+      <div class="timeline">
+        {% for item in sess.timeline %}
+          {% if item.kind == 'pv' %}
+            <div class="tl-pv {{ 'tl-pv--key' if item.key_event_count else '' }}">
+              <div class="tl-pv-head">
+                <span class="tl-time mono">{{ item.event_timestamp.strftime('%H:%M:%S') if item.event_timestamp else '' }}</span>
+                <span class="tl-num">{{ t('journey.timeline.pv_no', no=item.page_view_no) }}</span>
+                <span class="tl-pv-title">
+                  {% if item.page_location %}
+                    <a href="{{ item.page_location }}" target="_blank" rel="noopener noreferrer">{{ item.page_title or t('journey.timeline.no_title') }}</a>
+                  {% else %}
+                    {{ item.page_title or t('journey.timeline.no_title') }}
+                  {% endif %}
+                </span>
+                {% if item.key_event_count %}<span class="badge badge-ok">{{ t('journey.step.key_event') }}</span>{% endif %}
+              </div>
+              <div class="tl-pv-path mono"><code>{{ item.page_path or '-' }}</code></div>
+              <div class="tl-pv-subs">
+                {% if item.dwell_sec is not none %}<span>{{ t('journey.timeline.dwell', seconds=item.dwell_sec | round(0) | int) }}</span>{% endif %}
+                {% if item.engagement_time_msec %}<span>{{ t('journey.timeline.engagement', seconds=((item.engagement_time_msec or 0) / 1000) | round(1)) }}</span>{% endif %}
+                {% if item.scrolls %}<span>{{ t('journey.timeline.scrolls', count=item.scrolls) }}</span>{% endif %}
+                {% if item.clicks %}<span>{{ t('journey.timeline.clicks', count=item.clicks) }}</span>{% endif %}
+              </div>
+              {% if item.attached_events %}
+                <div class="tl-attached">
+                  <div class="tl-attached-title">{{ t('journey.timeline.attached') }}</div>
+                  {% for ev in item.attached_events %}
+                    <div class="tl-event">
+                      <span class="tl-time mono">{{ ev.event_timestamp.strftime('%H:%M:%S') if ev.event_timestamp else '' }}</span>
+                      <span class="tl-event-name mono">{{ ev.event_name }}</span>
+                      {% if ev.seconds_from_prev is not none %}<span class="muted">+{{ ev.seconds_from_prev | round(0) | int }} s</span>{% endif %}
+                      {% if ev.is_key_event %}<span class="badge badge-ok">{{ t('journey.step.key_event') }}</span>{% endif %}
+                    </div>
+                  {% endfor %}
+                </div>
+              {% endif %}
+            </div>
+          {% else %}
+            <div class="tl-orphan">
+              <div class="tl-event">
+                <span class="tl-time mono">{{ item.event_timestamp.strftime('%H:%M:%S') if item.event_timestamp else '' }}</span>
+                <span class="tl-event-name mono">{{ item.event_name }}</span>
+                <span class="muted">{{ t('journey.timeline.orphan') }}</span>
+                {% if item.is_key_event %}<span class="badge badge-ok">{{ t('journey.step.key_event') }}</span>{% endif %}
+              </div>
+            </div>
+          {% endif %}
+        {% endfor %}
       </div>
+
+      {# ----- The v0.3.0 step table, kept as a collapsed raw view ----- #}
+      <details class="raw">
+        <summary>{{ t('journey.timeline.raw') }}</summary>
+        <div class="table-scroll">
+          <table class="steps">
+            <thead>
+              <tr>
+                <th>{{ t('journey.step.no') }}</th>
+                <th>{{ t('journey.step.time') }}</th>
+                <th>{{ t('journey.step.elapsed') }}</th>
+                <th>{{ t('journey.step.event') }}</th>
+                <th>{{ t('journey.step.page') }}</th>
+                <th>{{ t('journey.step.engagement') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for st in sess.steps %}
+                <tr class="{{ 'key' if st.is_key_event else '' }}">
+                  <td class="num">{{ st.step_no }}</td>
+                  <td class="mono">{{ st.event_timestamp.strftime('%H:%M:%S') if st.event_timestamp else '-' }}</td>
+                  <td class="num">{{ ('+' ~ (st.seconds_from_prev | round(0) | int) ~ ' s') if st.seconds_from_prev is not none else '' }}</td>
+                  <td>
+                    <code>{{ st.event_name }}</code>
+                    {% if st.is_key_event %}<span class="badge badge-ok">{{ t('journey.step.key_event') }}</span>{% endif %}
+                  </td>
+                  <td>
+                    {% if st.page_title %}{{ st.page_title }}<br>{% endif %}
+                    {% if st.page_location %}
+                      <a class="mono" href="{{ st.page_location }}" target="_blank" rel="noopener noreferrer">{{ st.page_path }}</a>
+                    {% endif %}
+                  </td>
+                  <td class="num">
+                    {% if st.engagement_time_msec %}{{ t('journey.step.engagement.sec', seconds=((st.engagement_time_msec or 0) / 1000) | round(1)) }}{% endif %}
+                  </td>
+                </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </details>
     </div>
   {% endfor %}
 {% else %}

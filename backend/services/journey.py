@@ -8,11 +8,20 @@ Pipeline:
 
     rows (BigQuery, ordered by event_timestamp)
       -> group_sessions()        one dict per session, steps in order
+         -> build_timeline()              page views with their attached events
+         -> build_session_inference_notes()  per-session reading aids, keyed for i18n
       -> summarize()             user-level totals and the most common A -> B hop
       -> build_observations()    short factual notes, keyed for i18n
 
 The grouping, collapsing and summarising functions are pure and take plain
 dicts, so they are unit-tested without a network.
+
+v0.4.0 adds the *timeline* view of a session (ported from snowprism's user
+explorer): one row per ``page_view`` carrying the non-page-view events that
+fired while that page was open (``attached_events``), plus ``inference_notes``
+- short heuristic hints such as "organic search entry" or "bounced on the
+landing page". These are deterministic rules; the wording is probabilistic on
+purpose and lives in the i18n catalogues under ``journey.note.<code>``.
 """
 
 from __future__ import annotations
@@ -64,6 +73,21 @@ OPTIONAL_COLUMNS: dict[str, str] = {
 
 # Threshold for the "many pages in one session" note.
 MANY_PAGES_THRESHOLD = 5
+
+# --- Session inference notes (v0.4.0) ---------------------------------------
+# At most this many notes per session, as in snowprism: the notes are a reading
+# aid next to the timeline, not a report.
+MAX_INFERENCE_NOTES = 3
+LONG_DWELL_SEC = 120          # one page open this long -> "read carefully"
+DEEP_SESSION_PV = 5           # or this many page views ...
+DEEP_SESSION_SEC = 300        # ... or this long a session -> "comparing seriously"
+SHORT_SESSION_SEC = 30        # mobile + shorter than this -> "quick mobile check"
+KEY_EVENT_AFTER_PAGES = 3     # key event fired after at least this many pages
+PAID_MEDIUMS = frozenset({"cpc", "ppc", "paid", "paid_search", "paidsearch", "display"})
+TASK_LANDING_TOKENS = ("login", "reset", "password", "thanks", "thank-you", "thank_you", "contact", "mypage", "account")
+SCROLL_EVENTS = frozenset({"scroll"})
+CLICK_EVENTS = frozenset({"click", "select_content", "file_download", "outbound_click"})
+FUNNEL_EVENTS = ("purchase", "begin_checkout", "add_to_cart")  # checked in this order
 
 
 # --------------------------------------------------------------------------
@@ -176,6 +200,7 @@ def group_sessions(rows: list[dict[str, Any]], user_pseudo_id: str) -> list[dict
         paths = collapse_consecutive([s["page_path"] for s in steps if s["page_path"]])
         first_ts = steps[0]["event_timestamp"]
         last_ts = steps[-1]["event_timestamp"]
+        hostnames = sorted({h for h in (hostname_of(s["page_location"]) for s in steps) if h})
         sessions.append(
             {
                 "session_key": key,
@@ -198,14 +223,203 @@ def group_sessions(rows: list[dict[str, Any]], user_pseudo_id: str) -> list[dict
                 "entry_path": paths[0] if paths else None,
                 "exit_path": paths[-1] if paths else None,
                 "page_path_sequence": paths,
+                "hostnames": hostnames,
+                "scrolls": sum(1 for s in steps if s["event_name"] in SCROLL_EVENTS),
+                "clicks": sum(1 for s in steps if s["event_name"] in CLICK_EVENTS),
                 "steps": steps,
+                # v0.4.0: page views with their attached events, and orphan
+                # events for a session that has no page_view at all.
+                "timeline": build_timeline(steps, session_end=last_ts),
             }
         )
 
     sessions.sort(key=lambda s: ((0, s["session_start"]) if isinstance(s["session_start"], datetime) else (1, 0)))
     for no, sess in enumerate(sessions, start=1):
         sess["session_no"] = no
+        sess["inference_notes"] = build_session_inference_notes(sess)
     return sessions
+
+
+def hostname_of(page_location: str | None) -> str | None:
+    """``https://www.x.test/a`` -> ``www.x.test``; bare paths have no host."""
+    if not page_location:
+        return None
+    try:
+        return urlparse(page_location).netloc.lower() or None
+    except ValueError:
+        return None
+
+
+# --------------------------------------------------------------------------
+# Timeline: page views with attached events (v0.4.0)
+# --------------------------------------------------------------------------
+def build_timeline(steps: list[dict[str, Any]], *, session_end: Any = None) -> list[dict[str, Any]]:
+    """Group a session's ordered steps into page-view rows.
+
+    Every non-``page_view`` step is *attached* to the most recent page view
+    whose timestamp is not later than the event's (snowprism attaches by time
+    window rather than by ``page_view_id``, which GA4 exports set wrongly for
+    non-page-view events). Events that fire before the first page view -
+    typically ``session_start`` and ``first_visit`` - are attached to the
+    first page view. When a session has no page view at all, every event is
+    returned as an orphan ``{"kind": "event"}`` item so nothing is hidden.
+
+    ``dwell_sec`` is the time from a page view to the next one (or to the last
+    event of the session for the final page), which is what the notes use;
+    ``engagement_time_msec`` is kept separately because GA4 reports it only on
+    some events.
+    """
+    pvs: list[dict[str, Any]] = []
+    orphans: list[dict[str, Any]] = []
+    for step in steps:
+        if step.get("event_name") == "page_view":
+            pvs.append(
+                {
+                    "kind": "pv",
+                    "page_view_no": len(pvs) + 1,
+                    "step_no": step["step_no"],
+                    "event_timestamp": step.get("event_timestamp"),
+                    "page_title": step.get("page_title"),
+                    "page_path": step.get("page_path"),
+                    "page_location": step.get("page_location"),
+                    "engagement_time_msec": step.get("engagement_time_msec"),
+                    "is_key_event": bool(step.get("is_key_event")),
+                    "dwell_sec": None,
+                    "attached_events": [],
+                }
+            )
+
+    def _event_item(step: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "kind": "event",
+            "step_no": step["step_no"],
+            "event_timestamp": step.get("event_timestamp"),
+            "event_name": step.get("event_name"),
+            "page_path": step.get("page_path"),
+            "engagement_time_msec": step.get("engagement_time_msec"),
+            "seconds_from_prev": step.get("seconds_from_prev"),
+            "is_key_event": bool(step.get("is_key_event")),
+        }
+
+    if not pvs:
+        return [_event_item(s) for s in steps]
+
+    for step in steps:
+        if step.get("event_name") == "page_view":
+            continue
+        ts = step.get("event_timestamp")
+        target = None
+        if isinstance(ts, datetime):
+            for pv in pvs:
+                pts = pv["event_timestamp"]
+                if isinstance(pts, datetime) and pts <= ts:
+                    target = pv
+                else:
+                    break
+        if target is None:
+            # Before the first page view, or no usable timestamp: the first
+            # page view is the only sensible anchor.
+            target = pvs[0]
+        target["attached_events"].append(_event_item(step))
+
+    for pv, nxt in zip(pvs, pvs[1:] + [None]):
+        end = nxt["event_timestamp"] if nxt else session_end
+        pv["dwell_sec"] = _seconds_between(end, pv["event_timestamp"])
+        pv["scrolls"] = sum(1 for e in pv["attached_events"] if e["event_name"] in SCROLL_EVENTS)
+        pv["clicks"] = sum(1 for e in pv["attached_events"] if e["event_name"] in CLICK_EVENTS)
+        pv["key_event_count"] = sum(1 for e in pv["attached_events"] if e["is_key_event"]) + (
+            1 if pv["is_key_event"] else 0
+        )
+    return pvs
+
+
+# --------------------------------------------------------------------------
+# Session inference notes (v0.4.0)
+# --------------------------------------------------------------------------
+def build_session_inference_notes(sess: dict[str, Any]) -> list[dict[str, Any]]:
+    """1-3 heuristic reading aids for one session, as ``{"code", "params"}``.
+
+    Ported from snowprism's ``_build_session_inference_notes``. Deterministic
+    and LLM-free; the sentences (deliberately hedged with "may" / "可能性") are
+    in the i18n catalogues under ``journey.note.<code>``. Rules are checked in
+    a fixed order and the list is cut at :data:`MAX_INFERENCE_NOTES`, so the
+    entry-source note, the outcome note and the engagement note win over the
+    weaker device / domain hints.
+
+    Column availability degrades gracefully: on the reduced sample dataset
+    ``traffic_*`` and ``device_category`` are NULL, so those rules simply never
+    fire.
+    """
+    notes: list[dict[str, Any]] = []
+    steps = sess.get("steps") or []
+    names = [s.get("event_name") for s in steps]
+    landing = (sess.get("entry_path") or "").lower()
+    source = (sess.get("traffic_source") or "").lower()
+    medium = (sess.get("traffic_medium") or "").lower()
+    device = (sess.get("device_category") or "").lower()
+    page_views = int(sess.get("page_views") or 0)
+    duration = float(sess.get("duration_sec") or 0)
+    paths = sess.get("page_path_sequence") or []
+    timeline = sess.get("timeline") or []
+
+    # 1. Where the session came from.
+    if source == "google" and medium == "organic":
+        notes.append({"code": "organic_search", "params": {}})
+    elif medium in PAID_MEDIUMS:
+        notes.append({"code": "paid_entry", "params": {"source": sess.get("traffic_source") or "-", "medium": medium}})
+
+    # 2. A landing page that suggests a task rather than exploration.
+    if any(tok in landing for tok in TASK_LANDING_TOKENS):
+        notes.append({"code": "task_landing", "params": {"path": sess.get("entry_path")}})
+
+    # 3. Outcome: e-commerce funnel events first, then any key event.
+    funnel = next((f for f in FUNNEL_EVENTS if f in names), None)
+    if funnel:
+        notes.append({"code": f"funnel_{funnel}", "params": {}})
+    else:
+        first_key = next((i for i, s in enumerate(steps) if s.get("is_key_event")), None)
+        if first_key is not None:
+            pages_before = sum(1 for s in steps[:first_key] if s.get("event_name") == "page_view")
+            key_name = steps[first_key].get("event_name")
+            if pages_before >= KEY_EVENT_AFTER_PAGES:
+                notes.append({"code": "key_event_after_pages", "params": {"event": key_name, "pages": pages_before}})
+            else:
+                notes.append({"code": "key_event_early", "params": {"event": key_name, "pages": pages_before}})
+
+    # 4. How the session went: bounce / deep / long dwell / returned / scrolled.
+    long_dwell = [pv for pv in timeline if pv.get("kind") == "pv" and (pv.get("dwell_sec") or 0) >= LONG_DWELL_SEC]
+    if page_views == 1 and len(paths) <= 1:
+        notes.append({"code": "bounce", "params": {"path": sess.get("entry_path") or "-"}})
+    elif page_views >= DEEP_SESSION_PV or duration >= DEEP_SESSION_SEC:
+        notes.append({"code": "deep_session", "params": {"pages": page_views, "seconds": int(duration)}})
+    elif long_dwell:
+        pv = max(long_dwell, key=lambda p: p.get("dwell_sec") or 0)
+        notes.append({"code": "long_dwell", "params": {"path": pv.get("page_path") or "-", "seconds": int(pv.get("dwell_sec") or 0)}})
+    elif len(paths) >= 3 and paths[0] == paths[-1]:
+        notes.append({"code": "returned_to_entry", "params": {"path": paths[0]}})
+    elif int(sess.get("scrolls") or 0) >= 2:
+        notes.append({"code": "scrolled", "params": {"count": sess.get("scrolls")}})
+
+    # 5. Weaker hints.
+    if len(sess.get("hostnames") or []) >= 2:
+        notes.append({"code": "cross_domain", "params": {"count": len(sess["hostnames"])}})
+    if device == "mobile" and duration < SHORT_SESSION_SEC and page_views <= 2:
+        notes.append({"code": "mobile_quick", "params": {"seconds": int(duration)}})
+
+    if not notes:
+        notes.append({"code": "quick_check", "params": {}})
+    return notes[:MAX_INFERENCE_NOTES]
+
+
+def localize_notes(sessions: list[dict[str, Any]], langs: tuple[str, ...]) -> None:
+    """Attach ``text[lang]`` to every session's inference notes, in place."""
+    from i18n import translate  # backend/ is on sys.path, as in routers/ui.py
+
+    for sess in sessions:
+        for note in sess.get("inference_notes") or []:
+            note["text"] = {
+                lang: translate(f"journey.note.{note['code']}", lang, **note["params"]) for lang in langs
+            }
 
 
 def most_common_transition(sessions: list[dict[str, Any]]) -> dict[str, Any] | None:
@@ -401,6 +615,7 @@ def assemble(rows: list[dict[str, Any]], user_pseudo_id: str, *, max_rows: int, 
     truncated = len(rows) > max_rows
     rows = rows[:max_rows]
     sessions = group_sessions(rows, user_pseudo_id)
+    localize_notes(sessions, langs)
     summary = summarize(sessions, truncated=truncated)
     observations = localize_observations(build_observations(summary, sessions), langs)
     return {

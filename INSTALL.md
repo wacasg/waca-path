@@ -507,6 +507,17 @@ common `A -> B` transition) and short rule-based observations such as
 "no key events" or "entered and exited on the same page". No AI provider is
 involved, so it works without any API key.
 
+Since v0.4.0 each session is rendered as a **timeline**: one row per page
+view with the events that fired while that page was open (`scroll`, `click`,
+`form_submit`, key events, ...) nested underneath and the dwell time until
+the next page; a session with no page view at all lists its events as
+orphans. Each session also gets up to three **inference notes** - fixed
+heuristics such as "arrived from organic search", "bounced on the landing
+page" or "key event after 3 pages", worded as possibilities. In the JSON
+these are `sessions[].timeline` and `sessions[].inference_notes`; every
+v0.3.0 field is unchanged. The v0.3.0 step table is still on the page,
+collapsed under "Show all events as a table".
+
 The same data is available as JSON:
 
 ```bash
@@ -566,6 +577,98 @@ The response carries `period`, `totals` (`sessions`, `users`, `page_views`),
 (`from`, `to`, `sessions`, `share`), `entries`, `exits` (`path`, `sessions`,
 `share`) and `sequences` (`path[]`, `steps`, `cut`, `sessions`, `share`).
 
+### Journey context (no LLM)
+
+The journey page also shows a **Journey context** card, available as JSON:
+
+```bash
+curl "http://127.0.0.1:8080/api/users/anon_user_001/journey/context?tenant_id=example"
+```
+
+It contains `data_window` (first touch, last active, span, counts),
+`session_gaps` (every pause between consecutive sessions; `long_gaps` lists
+those of 7 days or more), `visited_paths` (first-seen order, page views and
+sessions per path), `journey_outcome` (`purchase` / `checkout_abandon` /
+`cart_abandon` / `key_event` / `view_only`), `expected_next_pages` (the
+tenant's `site.key_paths` split into `reached` and `not_reached`, the latter
+with a full URL when `site.base_url` is set), `device_and_traffic` and a
+one-line `sessions[]` digest. `ai.enabled` says whether the optional AI
+summary below is configured; it never contains a key. Everything here is a
+fixed rule over `micro_user_table`; no AI is involved.
+
+To make "key pages not yet reached" meaningful, list your site's important
+pages in the tenant config:
+
+```yaml
+# tenant_config/<your-tenant>.yaml
+site:
+  base_url: "https://www.example.com"
+  key_paths:
+    - "/"
+    - "/pricing"
+    - "/checkout/thank-you"
+```
+
+### Optional AI summary
+
+Everything above works with **no AI provider and no API key**. If you want
+one, the journey page can additionally ask a model for a one-paragraph
+persona-style summary, a 3-5 stage customer-journey sketch (stage, evidence
+pages, confidence) and up to three draft improvement ideas. This is a draft
+for an analyst, never an automatic change.
+
+1. Install the provider SDK. It is deliberately **not** in
+   `backend/requirements.txt`:
+
+   ```bash
+   pip install -r backend/requirements-ai.txt   # anthropic, openai, google-genai
+   ```
+
+2. Set the provider and its key, then start the backend as usual:
+
+   | Variable | Values / default |
+   |---|---|
+   | `WACA_PATH_AI_PROVIDER` | `anthropic`, `openai` or `google` (required to enable) |
+   | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | the key for that provider (required to enable) |
+   | `WACA_PATH_AI_MODEL` | optional; defaults `claude-sonnet-4-6`, `gpt-5-mini`, `gemini-2.5-flash` |
+   | `WACA_PATH_AI_RATE_LIMIT_PER_MIN` | optional; per-process cap, default `10` |
+   | `WACA_PATH_AI_MAX_TOKENS` | optional; output cap, default `1200` |
+
+   ```bash
+   export WACA_PATH_AI_PROVIDER=anthropic
+   export ANTHROPIC_API_KEY=...          # never commit this
+   ```
+
+3. Open `/ui/users/<id>/journey`. A **Summarize with AI** button appears in
+   the "AI summary (optional)" card only when both variables are set; the
+   result renders inline. The same call as JSON:
+
+   ```bash
+   curl -X POST "http://127.0.0.1:8080/api/users/anon_user_001/journey/summary" \
+     -H "Content-Type: application/json" \
+     -d '{"tenant_id": "example", "lang": "en"}'
+   ```
+
+   The response carries `provider`, `model`, `lang`, `summary`
+   (`persona_summary`, `journey_stages[]` with `stage` / `summary` /
+   `evidence_pages` / `confidence`, `improvement_ideas[]`) and a
+   `disclaimer`.
+
+Behaviour without a provider: the endpoint answers **409** with
+`{"detail": {"code": "ai_disabled", "message": ...}}` and the page renders no
+button at all. Other statuses: **429** when the per-minute cap is hit,
+**503** when the provider is set but its SDK is not installed (the message
+names `backend/requirements-ai.txt`), **502** when the provider call fails.
+
+What is sent: only the journey context and the timeline digest - page
+paths, titles, timestamps, event names, coarse device / traffic labels and
+the `user_pseudo_id`. No custom-dimension values. Keys are read from the
+environment at call time and never logged. **Cost:** every click is one
+model call of roughly 2-6k input tokens and up to `WACA_PATH_AI_MAX_TOKENS`
+output tokens, billed by your provider; the per-process rate limit is a
+guard against a runaway reload, not a budget. If you would rather not have
+any of this, simply leave `WACA_PATH_AI_PROVIDER` unset.
+
 ### Run the tests
 
 ```bash
@@ -610,3 +713,96 @@ response には `summary`（`sessions_count`, `total_pv`, `distinct_paths`,
 ```bash
 curl "http://127.0.0.1:8080/api/journeys/top?tenant_id=example&date_from=2026-05-01&date_to=2026-05-04&limit=10"
 ```
+
+経路画面の各セッションは v0.4.0 から**タイムライン**として表示されます。
+ページビュー 1 行ごとに、そのページを開いている間に発生したイベント
+（`scroll` / `click` / `form_submit` / キーイベントなど）を下に畳み、次のページまでの
+滞在秒数を添えます。ページビューが 1 つもないセッションはイベントだけを並べます。
+さらにセッションごとに最大 3 件の**推論メモ**（「検索経由の流入」「入口ページで離脱」
+「3 ページ閲覧後にキーイベント」など、固定ルールによる「可能性」の表現）が付きます。
+JSON では `sessions[].timeline` と `sessions[].inference_notes` で、v0.3.0 の
+フィールドはそのままです。従来のステップ表は「全イベントを表で見る」に畳んであります。
+
+### 8c. タイムライン情報（LLM 不使用）
+
+経路画面には**タイムライン情報**のカードもあり、JSON でも取得できます。
+
+```bash
+curl "http://127.0.0.1:8080/api/users/anon_user_001/journey/context?tenant_id=example"
+```
+
+内容は `data_window`（初回接触・最終活動・日数・件数）、`session_gaps`（連続する
+セッション間の間隔。`long_gaps` は 7 日以上のもの）、`visited_paths`（初出順、
+PV 数とセッション数）、`journey_outcome`（`purchase` / `checkout_abandon` /
+`cart_abandon` / `key_event` / `view_only`）、`expected_next_pages`（tenant_config の
+`site.key_paths` を `reached` / `not_reached` に分け、`site.base_url` があれば
+完全な URL を付与）、`device_and_traffic`、セッションごとの 1 行ダイジェスト
+`sessions[]` です。`ai.enabled` は次の AI 要約が設定済みかどうかで、キーは含みません。
+すべて `micro_user_table` に対する固定ルールで、AI は使いません。
+
+「未到達の重要ページ」を意味のあるものにするには、tenant_config にサイトの
+重要ページを列挙してください。
+
+```yaml
+# tenant_config/<your-tenant>.yaml
+site:
+  base_url: "https://www.example.com"
+  key_paths:
+    - "/"
+    - "/pricing"
+    - "/checkout/thank-you"
+```
+
+### 8d. AI 要約（任意）
+
+ここまでの機能は**AI プロバイダも API キーも不要**です。必要なら、経路画面から
+モデルに「ペルソナ要約 1 段落」「3〜5 段階の Customer Journey スケッチ（段階・根拠
+ページ・確信度）」「最大 3 件の施策案」を生成させることもできます。分析者向けの
+下書きであり、自動で何かを変えることはありません。
+
+1. プロバイダの SDK を入れます。`backend/requirements.txt` には**意図的に含めていません**。
+
+   ```bash
+   pip install -r backend/requirements-ai.txt   # anthropic, openai, google-genai
+   ```
+
+2. プロバイダとキーを設定して、いつも通り backend を起動します。
+
+   | 変数 | 値 / 既定 |
+   |---|---|
+   | `WACA_PATH_AI_PROVIDER` | `anthropic` / `openai` / `google`（有効化に必須） |
+   | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | そのプロバイダのキー（有効化に必須） |
+   | `WACA_PATH_AI_MODEL` | 任意。既定は `claude-sonnet-4-6` / `gpt-5-mini` / `gemini-2.5-flash` |
+   | `WACA_PATH_AI_RATE_LIMIT_PER_MIN` | 任意。プロセスごとの上限、既定 `10` |
+   | `WACA_PATH_AI_MAX_TOKENS` | 任意。出力トークン上限、既定 `1200` |
+
+   ```bash
+   export WACA_PATH_AI_PROVIDER=anthropic
+   export ANTHROPIC_API_KEY=...          # commit しないこと
+   ```
+
+3. `/ui/users/<id>/journey` を開くと、両方が設定されているときだけ「AI 要約（任意）」
+   カードに **AI で要約** ボタンが現れ、結果がその場に表示されます。JSON で呼ぶ場合:
+
+   ```bash
+   curl -X POST "http://127.0.0.1:8080/api/users/anon_user_001/journey/summary" \
+     -H "Content-Type: application/json" \
+     -d '{"tenant_id": "example", "lang": "ja"}'
+   ```
+
+   response には `provider`、`model`、`lang`、`summary`（`persona_summary`、
+   `journey_stages[]` の `stage` / `summary` / `evidence_pages` / `confidence`、
+   `improvement_ideas[]`）と `disclaimer` が入ります。
+
+プロバイダ未設定のときは **409** で `{"detail": {"code": "ai_disabled", "message": ...}}`
+を返し、画面にはボタン自体が出ません。そのほか、1 分あたりの上限に達すると **429**、
+プロバイダは設定済みだが SDK 未インストールなら **503**（メッセージに
+`backend/requirements-ai.txt` を示します）、プロバイダ呼び出し失敗は **502** です。
+
+送信するのはタイムライン情報とタイムラインのダイジェスト（ページパス・タイトル・
+時刻・イベント名・粗いデバイス／流入ラベル・`user_pseudo_id`）だけで、カスタム
+ディメンションの値は送りません。キーは呼び出し時に環境変数から読み、ログには
+出しません。**費用:** クリック 1 回がモデル呼び出し 1 回（入力およそ 2〜6k トークン、
+出力は最大 `WACA_PATH_AI_MAX_TOKENS`）で、各プロバイダの料金がかかります。
+プロセスごとの上限は連打対策であって予算管理ではありません。不要なら
+`WACA_PATH_AI_PROVIDER` を設定しないだけで、AI に関わる部分は一切動きません。

@@ -9,7 +9,10 @@ gcp:
   bq_dataset: "waca_core_output"
   region: "asia-northeast1"           # not read by the backend; scripts use WACA_PATH_LOCATION
 
-# Reserved for future use. The minimal backend does not read the `site` block.
+# Read by the journey context (v0.4.0): `key_paths` are the pages that matter
+# on your site; the journey page lists the ones a user has not reached yet,
+# linked with `base_url`. Both are optional - leave them out and that card
+# simply says the list is not configured.
 site:
   base_url: "https://www.example.com"
   key_paths:
