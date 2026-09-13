@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+{% block title %}{{ t('journeys.title') }} — {{ t('app.name') }}{% endblock %}
+
+{% block head %}
+<style>
+  .filter-panel { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .8rem; margin-bottom: .5rem; }
+  .filter-panel .row { display: flex; flex-wrap: wrap; align-items: center; gap: .4rem; margin: .2rem 0; }
+  .filter-panel label { font-size: 12px; color: var(--muted); font-weight: 600; }
+  .filter-panel input, .filter-panel select { font-size: 12px; padding: .2rem .3rem; }
+  .totals { display: flex; flex-wrap: wrap; gap: 1.2rem; font-size: 13px; margin: .3rem 0 .8rem; }
+  .totals b { font-size: 1.1rem; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(22rem, 1fr)); gap: .8rem; }
+  table.top { width: 100%; font-size: 12px; border-collapse: collapse; }
+  table.top th { text-align: left; color: var(--muted); font-weight: 600; padding: .25rem .4rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.top td { padding: .25rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.top tr:last-child td { border-bottom: 0; }
+  table.top td.num { text-align: right; white-space: nowrap; }
+  table.top code { background: var(--accent-bg); border-radius: 3px; padding: 0 .3rem; }
+  .arrow { color: var(--muted); margin: 0 .2rem; }
+  .note { font-size: 12px; color: var(--muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+<h2>{{ t('journeys.title') }}</h2>
+<p class="note">{{ t('journeys.subtitle') }}
+  {{ t('journey.api.hint') }}<a href="{{ api_url }}"><code>GET {{ api_url }}</code></a></p>
+
+<form class="filter-panel" method="get" action="/ui/journeys/">
+  <input type="hidden" name="lang" value="{{ lang }}">
+  <div class="row">
+    <label>{{ t('users.filter.period') }}</label>
+    <input type="date" name="from" value="{{ date_from }}">
+    <span class="muted">{{ t('users.filter.period.to') }}</span>
+    <input type="date" name="to" value="{{ date_to }}">
+    <label>{{ t('journeys.filter.limit') }}</label>
+    <select name="limit">
+      {% for n in (10, 20, 50) %}
+        <option value="{{ n }}" {{ 'selected' if n == limit else '' }}>{{ n }}</option>
+      {% endfor %}
+    </select>
+    <button class="btn" type="submit">{{ t('journeys.filter.apply') }}</button>
+    <a class="btn" href="/ui/journeys/?lang={{ lang }}">{{ t('users.filter.reset') }}</a>
+  </div>
+</form>
+
+{% if not error %}
+  {% set period = stats.period or {} %}
+  {% if period.get('clamped') %}
+    <div class="card" style="border-color:#e8d5a0; background: var(--warn-bg); color: var(--warn);">
+      {{ t('journeys.period.clamped', date=period.get('latest_event_date')) }}
+    </div>
+  {% endif %}
+
+  {% set tot = stats.totals or {} %}
+  <div class="totals">
+    <span>{{ t('journeys.totals.sessions') }} <b>{{ tot.get('sessions') or 0 }}</b></span>
+    <span>{{ t('journeys.totals.users') }} <b>{{ tot.get('users') or 0 }}</b></span>
+    <span>{{ t('journeys.totals.page_views') }} <b>{{ tot.get('page_views') or 0 }}</b></span>
+    <span class="muted">{{ t('journeys.totals.analyzed', count=stats.sessions_analyzed or 0) }}</span>
+  </div>
+
+  {% if stats.truncated %}
+    <div class="card" style="border-color:#e8d5a0; background: var(--warn-bg); color: var(--warn);">
+      {{ t('journeys.truncated', count=stats.max_sessions) }}
+    </div>
+  {% endif %}
+
+  {% if not stats.sessions_analyzed %}
+    <p class="muted">{{ t('journeys.empty') }}</p>
+  {% else %}
+  <div class="grid">
+    <div class="card">
+      <strong>{{ t('journeys.transitions') }}</strong>
+      <p class="note" style="margin:.1rem 0 .4rem;">{{ t('journeys.transitions.note') }}</p>
+      <div class="table-scroll">
+        <table class="top">
+          <thead><tr><th>#</th><th>{{ t('journeys.col.transition') }}</th><th>{{ t('journeys.col.sessions') }}</th><th>{{ t('journeys.col.share') }}</th></tr></thead>
+          <tbody>
+            {% for r in stats.transitions %}
+              <tr>
+                <td class="num muted">{{ loop.index }}</td>
+                <td><code>{{ r['from'] }}</code><span class="arrow">→</span><code>{{ r['to'] }}</code></td>
+                <td class="num">{{ r.sessions }}</td>
+                <td class="num">{{ (r.share * 100) | round(1) }}%</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>{{ t('journeys.sequences') }}</strong>
+      <p class="note" style="margin:.1rem 0 .4rem;">{{ t('journeys.sequences.note', steps=stats.sequence_max_steps) }}</p>
+      <div class="table-scroll">
+        <table class="top">
+          <thead><tr><th>#</th><th>{{ t('journeys.col.sequence') }}</th><th>{{ t('journeys.col.sessions') }}</th><th>{{ t('journeys.col.share') }}</th></tr></thead>
+          <tbody>
+            {% for r in stats.sequences %}
+              <tr>
+                <td class="num muted">{{ loop.index }}</td>
+                <td>
+                  {% for p in r.path %}{% if not loop.first %}<span class="arrow">→</span>{% endif %}<code>{{ p }}</code>{% endfor %}
+                  {% if r.cut %}<span class="muted">…</span>{% endif %}
+                </td>
+                <td class="num">{{ r.sessions }}</td>
+                <td class="num">{{ (r.share * 100) | round(1) }}%</td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>{{ t('journeys.entries') }}</strong>
+      <div class="table-scroll">
+        <table class="top">
+          <thead><tr><th>#</th><th>{{ t('journeys.col.path') }}</th><th>{{ t('journeys.col.sessions') }}</th><th>{{ t('journeys.col.share') }}</th></tr></thead>
+          <tbody>
+            {% for r in stats.entries %}
+              <tr><td class="num muted">{{ loop.index }}</td><td><code>{{ r.path }}</code></td>
+                  <td class="num">{{ r.sessions }}</td><td class="num">{{ (r.share * 100) | round(1) }}%</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card">
+      <strong>{{ t('journeys.exits') }}</strong>
+      <div class="table-scroll">
+        <table class="top">
+          <thead><tr><th>#</th><th>{{ t('journeys.col.path') }}</th><th>{{ t('journeys.col.sessions') }}</th><th>{{ t('journeys.col.share') }}</th></tr></thead>
+          <tbody>
+            {% for r in stats.exits %}
+              <tr><td class="num muted">{{ loop.index }}</td><td><code>{{ r.path }}</code></td>
+                  <td class="num">{{ r.sessions }}</td><td class="num">{{ (r.share * 100) | round(1) }}%</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+{% endif %}
+{% endblock %}

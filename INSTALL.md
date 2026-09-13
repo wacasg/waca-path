@@ -496,6 +496,76 @@ They then appear in the users list, the user detail page and the CSV export. A
 column that is not present in the table is skipped, so a stale entry cannot
 break the page.
 
+### Per-user journey (no LLM)
+
+Every user detail page links to **View journey** (`経路を見る`), at
+`/ui/users/<user_pseudo_id>/journey`. It lists the user's sessions in time
+order, each as a step list (time, seconds since the previous step, event, page
+title and path, engagement, key-event badge), the collapsed page path with the
+entry and exit page, a summary (sessions, page views, distinct pages, the most
+common `A -> B` transition) and short rule-based observations such as
+"no key events" or "entered and exited on the same page". No AI provider is
+involved, so it works without any API key.
+
+The same data is available as JSON:
+
+```bash
+curl "http://127.0.0.1:8080/api/users/anon_user_001/journey?tenant_id=example&max_rows=500"
+```
+
+```json
+{
+  "tenant_id": "example",
+  "user_pseudo_id": "anon_user_001",
+  "source": "your-gcp-project-id.waca_path_sample_core.micro_user_table",
+  "summary": {
+    "sessions_count": 3, "events_count": 7, "total_pv": 4, "key_event_count": 1,
+    "distinct_paths": 6,
+    "most_common_transition": {"from": "/", "to": "/pricing", "count": 1},
+    "first_touch": "2026-05-01T10:00:00", "last_active": "2026-05-02T00:50:00",
+    "truncated": false
+  },
+  "sessions": [
+    {
+      "session_no": 1, "session_start": "2026-05-01T10:00:00", "duration_sec": 240.0,
+      "entry_path": "/", "exit_path": "/contact",
+      "page_path_sequence": ["/", "/pricing", "/contact"],
+      "steps": [
+        {"step_no": 1, "event_name": "session_start", "page_path": "/", "seconds_from_prev": null, "is_key_event": false},
+        {"step_no": 2, "event_name": "page_view", "page_path": "/pricing", "engagement_time_msec": 4500, "seconds_from_prev": 60.0, "is_key_event": false}
+      ]
+    }
+  ],
+  "observations": [
+    {"code": "key_events", "params": {"count": 1, "sessions": 1},
+     "text": {"ja": "キーイベントが 1 件あります（1 セッション）。", "en": "1 key event(s) across 1 session(s)."}}
+  ]
+}
+```
+
+`max_rows` (default 500, at most 5,000) caps the events read for the user;
+`summary.truncated` is `true` when the cap was hit.
+
+### Common journeys across all users (no LLM)
+
+**Journeys** (`経路`) in the header opens `/ui/journeys/`: for a period
+(default the last 30 days) it shows the most common page transitions, entry
+pages, exit pages and whole session routes, each with the number of sessions
+and its share. Only `page_view` rows are read, the scan is filtered on
+`event_date`, and at most 10,000 sessions (newest first) are counted; the page
+says so when that cap is reached. If the table has no data in the last 30
+days, the period moves back to end on the newest `event_date` and the page says
+so, rather than showing an empty result.
+
+```bash
+curl "http://127.0.0.1:8080/api/journeys/top?tenant_id=example&date_from=2026-05-01&date_to=2026-05-04&limit=10"
+```
+
+The response carries `period`, `totals` (`sessions`, `users`, `page_views`),
+`sessions_analyzed`, `truncated`, and the four lists `transitions`
+(`from`, `to`, `sessions`, `share`), `entries`, `exits` (`path`, `sessions`,
+`share`) and `sequences` (`path[]`, `steps`, `cut`, `sessions`, `share`).
+
 ### Run the tests
 
 ```bash
@@ -505,3 +575,38 @@ python -m pytest -q
 The suite checks, among other things, that every UI string is translated in
 every language, that CSV cells cannot be executed as spreadsheet formulas, and
 that cursor paging does not drop or repeat rows.
+
+### 8b. ユーザー別経路と「よく通る経路」（LLM 不使用）
+
+ユーザー詳細画面の **経路を見る** から `/ui/users/<user_pseudo_id>/journey` を
+開けます。そのユーザーのセッションを時系列に並べ、各セッションをステップ一覧
+（時刻、前ステップからの秒数、イベント、ページタイトルとパス、エンゲージメント、
+キーイベント）で表示します。同じページの連続をまとめた経路と入口／出口ページ、
+サマリー（セッション数、PV、ユニークページ数、最頻出の `A -> B` 遷移）、
+「キーイベント無し」「入口と出口が同じページ」などのルールベースの所見も
+併せて表示します。AI プロバイダは使わないため、API キーは不要です。
+
+同じ内容は JSON でも取得できます。
+
+```bash
+curl "http://127.0.0.1:8080/api/users/anon_user_001/journey?tenant_id=example&max_rows=500"
+```
+
+response には `summary`（`sessions_count`, `total_pv`, `distinct_paths`,
+`most_common_transition`, `first_touch`, `last_active`, `truncated`）、
+`sessions[]`（`session_start`, `duration_sec`, `entry_path`, `exit_path`,
+`page_path_sequence`, `steps[]`）、`observations[]`（`code`, `params`,
+`text.ja` / `text.en`）が含まれます。`max_rows`（既定 500、最大 5,000）を
+超えた場合は `summary.truncated` が `true` になります。
+
+ヘッダーの **経路** から `/ui/journeys/` を開くと、期間内（既定は直近 30 日）の
+全セッションを集計した「よく通る遷移」「入口ページ」「出口ページ」
+「よく通る経路パターン」を、セッション数と割合つきで表示します。読むのは
+`page_view` 行だけで、`event_date` で絞り込み、新しい順に最大 10,000 セッション
+までを対象にします（上限に達した場合は画面に表示します）。直近 30 日に
+データが無い場合は、データの最終日までの 30 日間に自動でずらし、その旨を
+表示します。
+
+```bash
+curl "http://127.0.0.1:8080/api/journeys/top?tenant_id=example&date_from=2026-05-01&date_to=2026-05-04&limit=10"
+```

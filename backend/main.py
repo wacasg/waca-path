@@ -10,12 +10,15 @@ from __future__ import annotations
 
 import logging
 import os
+from datetime import date
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from i18n import SUPPORTED_LANGS
 from routers import ui as ui_router
+from services import journey, path_stats
 from services.config import (
     default_tenant_id,
     load_tenant_config,
@@ -29,7 +32,7 @@ logger = logging.getLogger("waca_path_backend")
 app = FastAPI(
     title="WACA path backend",
     description="Public site-audit backend and read-only admin UI for WACA core output.",
-    version="0.2.0",
+    version="0.3.0",
 )
 
 app.include_router(ui_router.router)
@@ -199,3 +202,58 @@ async def site_audit(req: SiteAuditRequest) -> dict[str, Any]:
         "source": f"{project}.{dataset}.micro_user_table",
         **summary,
     }
+
+
+@app.get("/api/users/{user_pseudo_id}/journey", tags=["users"])
+async def user_journey(
+    user_pseudo_id: str,
+    tenant_id: str | None = Query(default=None, max_length=128),
+    max_rows: int = Query(default=journey.DEFAULT_MAX_ROWS, ge=1, le=journey.MAX_ROWS_LIMIT),
+) -> dict[str, Any]:
+    """Per-user journey ("ユーザー別経路"), rule-based and LLM-free.
+
+    Sessions in time order, each with its ordered steps, plus a user-level
+    summary and short factual observations in every supported UI language.
+    Reads ``micro_user_table`` only.
+    """
+    if not user_pseudo_id or len(user_pseudo_id) > journey.PSEUDO_ID_MAX:
+        raise HTTPException(status_code=400, detail="Invalid user_pseudo_id")
+    tenant = tenant_id or default_tenant_id()
+    config = _load_tenant_config(tenant)
+    project, dataset = _project_and_dataset(config)
+    data = await journey.get_user_journey(
+        project=project,
+        dataset=dataset,
+        user_pseudo_id=user_pseudo_id,
+        max_rows=max_rows,
+        langs=SUPPORTED_LANGS,
+    )
+    return {"tenant_id": tenant, **data}
+
+
+@app.get("/api/journeys/top", tags=["users"])
+async def journeys_top(
+    tenant_id: str | None = Query(default=None, max_length=128),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    limit: int = Query(default=path_stats.DEFAULT_LIMIT, ge=1, le=path_stats.MAX_LIMIT),
+    max_sessions: int = Query(default=path_stats.DEFAULT_MAX_SESSIONS, ge=1, le=path_stats.MAX_SESSIONS_LIMIT),
+) -> dict[str, Any]:
+    """Most common routes across all users ("よく通る経路"), rule-based and LLM-free.
+
+    Top page transitions, entry pages, exit pages and whole session routes for
+    the period (default: the last 30 days, moved back to the newest event date
+    when the table has no recent data). Reads ``micro_user_table`` only.
+    """
+    tenant = tenant_id or default_tenant_id()
+    config = _load_tenant_config(tenant)
+    project, dataset = _project_and_dataset(config)
+    data = await path_stats.get_top_journeys(
+        project=project,
+        dataset=dataset,
+        date_from=date_from,
+        date_to=date_to,
+        limit=limit,
+        max_sessions=max_sessions,
+    )
+    return {"tenant_id": tenant, **data}

@@ -1,0 +1,153 @@
+{% extends "base.html" %}
+{% block title %}{{ t('journey.title') }} — {{ journey.user_pseudo_id[:12] }}… — {{ t('app.name') }}{% endblock %}
+
+{% block head %}
+<style>
+  .kv { width: 100%; font-size: 13px; }
+  .kv th { text-align: left; color: var(--muted); font-weight: 600; padding: .25rem .5rem .25rem 0; white-space: nowrap; vertical-align: top; }
+  .kv td { padding: .25rem 0; }
+  .session { border: 1px solid var(--line); border-radius: 6px; padding: .6rem .8rem; margin-bottom: .7rem; }
+  .session-head { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: .3rem; }
+  .session-time { font-weight: 700; }
+  .path-seq { font-size: 12px; margin: .2rem 0 .5rem; }
+  .path-seq code { background: var(--accent-bg); border-radius: 3px; padding: 0 .3rem; }
+  .path-seq .arrow { color: var(--muted); margin: 0 .25rem; }
+  table.steps { width: 100%; font-size: 12px; border-collapse: collapse; }
+  table.steps th { text-align: left; color: var(--muted); font-weight: 600; padding: .25rem .4rem; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  table.steps td { padding: .25rem .4rem; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.steps tr:last-child td { border-bottom: 0; }
+  table.steps td.num { text-align: right; white-space: nowrap; color: var(--muted); }
+  table.steps tr.key td { background: var(--ok-bg); }
+  .obs { margin: 0; padding-left: 1.2rem; }
+  .obs li { margin: .15rem 0; }
+  .note { font-size: 12px; color: var(--muted); }
+</style>
+{% endblock %}
+
+{% block content %}
+<a class="btn" href="/ui/users/{{ journey.user_pseudo_id | urlencode }}?lang={{ lang }}">{{ t('journey.back') }}</a>
+
+<h2 style="margin-top:.6rem;">
+  {{ t('journey.title') }}
+  <code class="muted" style="font-size:12px; font-weight:normal;">{{ journey.user_pseudo_id }}</code>
+</h2>
+<p class="note">{{ t('journey.subtitle') }}
+  {{ t('journey.api.hint') }}<a href="{{ api_url }}"><code>GET {{ api_url }}</code></a></p>
+
+{% set s = journey.summary or {} %}
+{% if not error %}
+<div class="card">
+  <strong>{{ t('journey.summary') }}</strong>
+  <table class="kv">
+    <tr><th>{{ t('journey.summary.sessions') }}</th><td>{{ s.get('sessions_count') or 0 }}</td></tr>
+    <tr><th>{{ t('journey.summary.events') }}</th><td>{{ s.get('events_count') or 0 }}</td></tr>
+    <tr><th>{{ t('journey.summary.pv') }}</th><td>{{ s.get('total_pv') or 0 }}</td></tr>
+    <tr><th>{{ t('journey.summary.distinct_paths') }}</th><td>{{ s.get('distinct_paths') or 0 }}</td></tr>
+    <tr><th>{{ t('journey.summary.key_events') }}</th><td>{{ s.get('key_event_count') or 0 }}</td></tr>
+    <tr><th>{{ t('journey.summary.first_touch') }}</th>
+        <td>{{ s.get('first_touch').strftime('%Y-%m-%d %H:%M:%S') if s.get('first_touch') else '-' }}</td></tr>
+    <tr><th>{{ t('journey.summary.last_active') }}</th>
+        <td>{{ s.get('last_active').strftime('%Y-%m-%d %H:%M:%S') if s.get('last_active') else '-' }}</td></tr>
+    <tr><th>{{ t('journey.summary.transition') }}</th>
+        <td>
+          {% set hop = s.get('most_common_transition') %}
+          {% if hop %}
+            <code>{{ hop['from'] }}</code> <span class="muted">→</span> <code>{{ hop['to'] }}</code>
+            <span class="muted">({{ t('journey.summary.transition.count', count=hop['count']) }})</span>
+          {% else %}
+            <span class="muted">{{ t('journey.summary.none') }}</span>
+          {% endif %}
+        </td></tr>
+  </table>
+</div>
+
+<div class="card">
+  <strong>{{ t('journey.observations') }}</strong>
+  <p class="note" style="margin:.2rem 0 .4rem;">{{ t('journey.observations.note') }}</p>
+  <ul class="obs">
+    {% for o in journey.observations %}
+      <li>{{ o.text.get(lang) or o.text.get('ja') or o.code }}</li>
+    {% endfor %}
+  </ul>
+</div>
+
+{% if s.get('truncated') %}
+  <div class="card" style="border-color:#e8d5a0; background: var(--warn-bg); color: var(--warn);">
+    {{ t('journey.truncated', rows=max_rows) }}
+  </div>
+{% endif %}
+
+<h2>{{ t('journey.sessions') }}</h2>
+{% if journey.sessions %}
+  {% for sess in journey.sessions %}
+    <div class="session">
+      <div class="session-head">
+        <span class="session-time">{{ t('journey.session.no', no=sess.session_no) }}</span>
+        <span>{{ sess.session_start.strftime('%Y-%m-%d %H:%M:%S') if sess.session_start else '-' }}</span>
+        <span class="muted">{{ t('journey.session.duration', seconds=(sess.duration_sec or 0) | round(0) | int) }}</span>
+        <span class="muted">{{ t('detail.session.pv', count=sess.page_views or 0) }}</span>
+        <span class="muted">{{ t('detail.session.events', count=sess.events or 0) }}</span>
+        {% if (sess.key_event_count or 0) > 0 %}
+          <span class="badge badge-ok">{{ t('detail.session.key_events', count=sess.key_event_count) }}</span>
+        {% endif %}
+        {% if sess.device_category or sess.browser %}
+          <span class="muted">{{ sess.device_category or '-' }} / {{ sess.browser or '-' }}</span>
+        {% endif %}
+        {% if sess.traffic_source or sess.traffic_medium %}
+          <span class="muted">{{ sess.traffic_source or '-' }} / {{ sess.traffic_medium or '-' }}</span>
+        {% endif %}
+      </div>
+      <div class="path-seq">
+        <span class="muted">{{ t('journey.session.path_sequence') }}:</span>
+        {% for p in sess.page_path_sequence %}
+          {%- if not loop.first %}<span class="arrow">→</span>{% endif -%}
+          <code>{{ p }}</code>
+        {% endfor %}
+        {% if sess.page_path_sequence %}
+          <span class="muted">({{ t('journey.session.entry') }} <code>{{ sess.entry_path }}</code> /
+            {{ t('journey.session.exit') }} <code>{{ sess.exit_path }}</code>)</span>
+        {% endif %}
+      </div>
+      <div class="table-scroll">
+        <table class="steps">
+          <thead>
+            <tr>
+              <th>{{ t('journey.step.no') }}</th>
+              <th>{{ t('journey.step.time') }}</th>
+              <th>{{ t('journey.step.elapsed') }}</th>
+              <th>{{ t('journey.step.event') }}</th>
+              <th>{{ t('journey.step.page') }}</th>
+              <th>{{ t('journey.step.engagement') }}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for st in sess.steps %}
+              <tr class="{{ 'key' if st.is_key_event else '' }}">
+                <td class="num">{{ st.step_no }}</td>
+                <td class="mono">{{ st.event_timestamp.strftime('%H:%M:%S') if st.event_timestamp else '-' }}</td>
+                <td class="num">{{ ('+' ~ (st.seconds_from_prev | round(0) | int) ~ ' s') if st.seconds_from_prev is not none else '' }}</td>
+                <td>
+                  <code>{{ st.event_name }}</code>
+                  {% if st.is_key_event %}<span class="badge badge-ok">{{ t('journey.step.key_event') }}</span>{% endif %}
+                </td>
+                <td>
+                  {% if st.page_title %}{{ st.page_title }}<br>{% endif %}
+                  {% if st.page_location %}
+                    <a class="mono" href="{{ st.page_location }}" target="_blank" rel="noopener noreferrer">{{ st.page_path }}</a>
+                  {% endif %}
+                </td>
+                <td class="num">
+                  {% if st.engagement_time_msec %}{{ t('journey.step.engagement.sec', seconds=((st.engagement_time_msec or 0) / 1000) | round(1)) }}{% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  {% endfor %}
+{% else %}
+  <p class="muted">{{ t('journey.empty') }}</p>
+{% endif %}
+{% endif %}
+{% endblock %}

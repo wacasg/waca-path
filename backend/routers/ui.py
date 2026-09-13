@@ -8,14 +8,14 @@ from __future__ import annotations
 import logging
 import os
 from datetime import date, datetime, timedelta
-from urllib.parse import urlencode
+from urllib.parse import quote, urlencode
 
 from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 
 from i18n import LANG_COOKIE, SUPPORTED_LANGS, make_translator, negotiate_lang, normalize_lang
-from services import csv_export
+from services import csv_export, journey, path_stats
 from services.config import (
     TEMPLATE_DIR,
     custom_columns,
@@ -268,6 +268,124 @@ async def user_detail(user_pseudo_id: str, request: Request) -> Response:
         }
     )
     response = templates.TemplateResponse(request, "users/detail.html", context)
+    return _with_lang_cookie(response, lang, explicit)
+
+
+@router.get(
+    "/ui/users/{user_pseudo_id}/journey", response_class=HTMLResponse, include_in_schema=False
+)
+async def user_journey_page(user_pseudo_id: str, request: Request) -> Response:
+    """Per-user journey ("ユーザー別経路"): every session as an ordered step list.
+
+    Rule-based and LLM-free; the same data is available as JSON from
+    ``GET /api/users/{user_pseudo_id}/journey``.
+    """
+    if not user_pseudo_id or len(user_pseudo_id) > _PSEUDO_ID_MAX:
+        raise HTTPException(status_code=400, detail="Invalid user_pseudo_id")
+
+    config, project, dataset = _tenant(request)
+    lang, explicit = _lang_for(request, config)
+
+    try:
+        max_rows = int(request.query_params.get("max_rows") or journey.DEFAULT_MAX_ROWS)
+    except ValueError:
+        max_rows = journey.DEFAULT_MAX_ROWS
+    max_rows = max(1, min(max_rows, journey.MAX_ROWS_LIMIT))
+
+    data: dict = {
+        "user_pseudo_id": user_pseudo_id,
+        "summary": {},
+        "sessions": [],
+        "observations": [],
+    }
+    error: str | None = None
+    try:
+        data = await journey.get_user_journey(
+            project=project,
+            dataset=dataset,
+            user_pseudo_id=user_pseudo_id,
+            max_rows=max_rows,
+            langs=(lang,),
+        )
+    except Exception:
+        # Never surface the raw BigQuery error: it leaks project / dataset / SQL.
+        logger.exception("user journey query failed")
+        error = "users.error.bq"
+
+    tenant_id = request.query_params.get("tenant") or default_tenant_id()
+    context = _base_context(request, lang, config, project, dataset)
+    context.update(
+        {
+            "journey": data,
+            "max_rows": max_rows,
+            "error": error,
+            "api_url": (
+                f"/api/users/{quote(user_pseudo_id, safe='')}/journey?"
+                + urlencode({"tenant_id": tenant_id, "max_rows": max_rows})
+            ),
+        }
+    )
+    response = templates.TemplateResponse(request, "users/journey.html", context)
+    return _with_lang_cookie(response, lang, explicit)
+
+
+def _opt_date(value: str | None) -> date | None:
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+@router.get("/ui/journeys/", response_class=HTMLResponse, include_in_schema=False)
+async def journeys_index(request: Request) -> Response:
+    """Most common routes across all users ("よく通る経路"). Rule-based, LLM-free;
+    the same data is available as JSON from ``GET /api/journeys/top``."""
+    config, project, dataset = _tenant(request)
+    lang, explicit = _lang_for(request, config)
+
+    date_from = _opt_date(request.query_params.get("from"))
+    date_to = _opt_date(request.query_params.get("to"))
+    try:
+        limit = int(request.query_params.get("limit") or path_stats.DEFAULT_LIMIT)
+    except ValueError:
+        limit = path_stats.DEFAULT_LIMIT
+    limit = max(1, min(limit, path_stats.MAX_LIMIT))
+
+    stats: dict = {"period": {}, "totals": {}, "transitions": [], "entries": [], "exits": [], "sequences": []}
+    error: str | None = None
+    try:
+        stats = await path_stats.get_top_journeys(
+            project=project, dataset=dataset, date_from=date_from, date_to=date_to, limit=limit
+        )
+    except Exception:
+        # Never surface the raw BigQuery error: it leaks project / dataset / SQL.
+        logger.exception("journeys aggregation query failed")
+        error = "users.error.bq"
+
+    period = stats.get("period") or {}
+    shown_from = period.get("date_from") or date_from or (date.today() - timedelta(days=path_stats.DEFAULT_PERIOD_DAYS))
+    shown_to = period.get("date_to") or date_to or date.today()
+    tenant_id = request.query_params.get("tenant") or default_tenant_id()
+    api_params = {"tenant_id": tenant_id, "limit": limit}
+    if date_from:
+        api_params["date_from"] = date_from.isoformat()
+    if date_to:
+        api_params["date_to"] = date_to.isoformat()
+
+    context = _base_context(request, lang, config, project, dataset)
+    context.update(
+        {
+            "stats": stats,
+            "limit": limit,
+            "date_from": shown_from.isoformat(),
+            "date_to": shown_to.isoformat(),
+            "error": error,
+            "api_url": "/api/journeys/top?" + urlencode(api_params),
+        }
+    )
+    response = templates.TemplateResponse(request, "journeys/index.html", context)
     return _with_lang_cookie(response, lang, explicit)
 
 

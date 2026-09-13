@@ -27,6 +27,8 @@
 
 {% block content %}
 <a class="btn" href="/ui/users/?from={{ date_from }}&to={{ date_to }}&lang={{ lang }}">{{ t('detail.back') }}</a>
+<a class="btn" href="/ui/users/{{ detail.user_pseudo_id | urlencode }}/journey?lang={{ lang }}"
+   title="{{ t('detail.journey.tip') }}">{{ t('detail.journey') }}</a>
 
 <h2 style="margin-top:.6rem;">
   {% if detail.profile.get('user_id') %}

@@ -5,6 +5,36 @@ This project adheres to [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- **Per-user journey (`ユーザー別経路`), rule-based and LLM-free.**
+  `GET /api/users/{user_pseudo_id}/journey` returns the user's
+  `micro_user_table` events grouped into sessions (by
+  `pseudonymous_session_id`, falling back to `user_pseudo_id` +
+  `ga_session_id`), each session as an ordered step list (event, page title,
+  page path, engagement, seconds since the previous step, key-event flag),
+  the collapsed page-path sequence with entry / exit page, a user-level
+  summary (sessions, page views, distinct pages, most common `A -> B`
+  transition, first touch / last active) and short factual observations in
+  every UI language. The same view is rendered at
+  `/ui/users/{user_pseudo_id}/journey`, linked from the user detail page.
+  No AI provider or API key is involved: every observation is a fixed rule.
+- **Common journeys (`よく通る経路`) across all users.** `GET /api/journeys/top`
+  and `/ui/journeys/` (linked from the header) aggregate every session's
+  `page_view` rows in a period into the most common page transitions, entry
+  pages, exit pages and whole session routes (consecutive duplicates
+  collapsed, first 8 steps), each counted by sessions with its share. The
+  default period is the last 30 days; if the table has no data that recent
+  the window moves back to end on the newest `event_date` and the page says
+  so. The BigQuery scan is partition-filtered on `event_date`, returns one
+  row per session and is capped (10,000 sessions by default, announced when
+  hit); the pattern counting happens in Python and is unit-tested.
+- Optional columns (`pseudonymous_session_id`, `session_event_no`,
+  `seconds_from_prev_event`, `traffic_*`, `device_category`, `browser`) are
+  probed at runtime, so both features work on the reduced sample dataset as
+  well as on a full WACA core output.
+- App version is now `0.3.0`.
+
 ### Fixed
 
 - **`POST /api/agent/site-audit` returned 400 against every real WACA core
