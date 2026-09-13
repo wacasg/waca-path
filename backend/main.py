@@ -99,6 +99,10 @@ async def _query_micro_user_table(
         NotFound,
     )
 
+    # Select only columns that every WACA core output provides. ``clean_page_path``
+    # is not part of the public WACA core micro_user_table, and the summary uses
+    # ``page_location`` anyway, so requesting it turned every real-data call into
+    # a 400 (``Unrecognized name: clean_page_path``).
     sql = f"""
     SELECT
       event_date,
@@ -108,7 +112,6 @@ async def _query_micro_user_table(
       user_id,
       ga_session_id,
       page_location,
-      clean_page_path,
       page_title,
       engagement_time_msec,
       device_category,

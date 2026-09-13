@@ -52,7 +52,15 @@ for path in docs training metrics; do
   fi
 done
 
-if find . -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' \) -print -quit | grep -q .; then
+# Cache directories must not be *committed*. Running the backend (INSTALL.md
+# section 4) legitimately writes backend/__pycache__ next to a local .venv, so
+# check the Git index when available and otherwise skip virtualenvs.
+if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  if git ls-files | grep -Eq '(^|/)(__pycache__|\.pytest_cache|\.mypy_cache)/'; then
+    echo "ERROR: cache directories must not be committed to the public install repository." >&2
+    exit 1
+  fi
+elif find . -type d -name '.venv' -prune -o -type d \( -name '__pycache__' -o -name '.pytest_cache' -o -name '.mypy_cache' \) -print -quit | grep -q .; then
   echo "ERROR: cache directories must not be included in the public install repository." >&2
   exit 1
 fi
