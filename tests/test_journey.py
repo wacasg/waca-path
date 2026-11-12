@@ -226,7 +226,7 @@ class TestJourneySql:
         assert "/ui/journeys/" in paths
         assert "/api/users/{user_pseudo_id}/journey/context" in paths
         assert "/api/users/{user_pseudo_id}/journey/summary" in paths
-        assert main.app.version == "0.4.0"
+        assert main.app.version == "0.4.1"
 
 
 # ---------------------------------------------------------------- cross-user aggregation

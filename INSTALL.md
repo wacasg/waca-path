@@ -630,7 +630,7 @@ for an analyst, never an automatic change.
    |---|---|
    | `WACA_PATH_AI_PROVIDER` | `anthropic`, `openai` or `google` (required to enable) |
    | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | the key for that provider (required to enable) |
-   | `WACA_PATH_AI_MODEL` | optional; defaults `claude-sonnet-4-6`, `gpt-5-mini`, `gemini-2.5-flash` |
+   | `WACA_PATH_AI_MODEL` | optional; defaults `claude-sonnet-4-6`, `gpt-5.6-terra`, `gemini-2.5-flash` |
    | `WACA_PATH_AI_RATE_LIMIT_PER_MIN` | optional; per-process cap, default `10` |
    | `WACA_PATH_AI_MAX_TOKENS` | optional; output cap, default `1200` |
 
@@ -772,7 +772,7 @@ site:
    |---|---|
    | `WACA_PATH_AI_PROVIDER` | `anthropic` / `openai` / `google`（有効化に必須） |
    | `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `GOOGLE_API_KEY` | そのプロバイダのキー（有効化に必須） |
-   | `WACA_PATH_AI_MODEL` | 任意。既定は `claude-sonnet-4-6` / `gpt-5-mini` / `gemini-2.5-flash` |
+   | `WACA_PATH_AI_MODEL` | 任意。既定は `claude-sonnet-4-6` / `gpt-5.6-terra` / `gemini-2.5-flash` |
    | `WACA_PATH_AI_RATE_LIMIT_PER_MIN` | 任意。プロセスごとの上限、既定 `10` |
    | `WACA_PATH_AI_MAX_TOKENS` | 任意。出力トークン上限、既定 `1200` |
 

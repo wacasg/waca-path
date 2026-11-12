@@ -3,7 +3,18 @@
 All notable changes to WACA path are recorded here.
 This project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.4.1] - 2026-11-12
+
+### Changed
+
+- **The OpenAI default model is now `gpt-5.6-terra`** (was `gpt-5-mini`).
+  OpenAI retires the GPT-5 mini API on 2026-12-11, after which the old
+  default would fail every summary call when `WACA_PATH_AI_PROVIDER=openai`
+  is set without `WACA_PATH_AI_MODEL`. An explicit `WACA_PATH_AI_MODEL`
+  still overrides the default; `anthropic` and `google` are unaffected.
+- App version is now `0.4.1`.
+
+## [0.4.0] - 2026-09-13
 
 ### Added
 

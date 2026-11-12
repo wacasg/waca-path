@@ -32,7 +32,7 @@ logger = logging.getLogger("waca_path_backend")
 app = FastAPI(
     title="WACA path backend",
     description="Public site-audit backend and read-only admin UI for WACA core output.",
-    version="0.4.0",
+    version="0.4.1",
 )
 
 app.include_router(ui_router.router)

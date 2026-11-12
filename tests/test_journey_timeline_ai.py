@@ -298,7 +298,7 @@ class TestAIConfig:
         monkeypatch.setenv(ai_summary.PROVIDER_ENV, "openai")
         assert ai_summary.ai_config() is None
         monkeypatch.setenv("OPENAI_API_KEY", "x")
-        assert ai_summary.ai_config().model == "gpt-5-mini"
+        assert ai_summary.ai_config().model == "gpt-5.6-terra"
         monkeypatch.setenv(ai_summary.PROVIDER_ENV, "mystery")
         assert ai_summary.ai_config() is None
 
@@ -311,7 +311,7 @@ class TestAIConfig:
     def test_default_models(self):
         assert {p: v[1] for p, v in ai_summary.PROVIDERS.items()} == {
             "anthropic": "claude-sonnet-4-6",
-            "openai": "gpt-5-mini",
+            "openai": "gpt-5.6-terra",
             "google": "gemini-2.5-flash",
         }
 

@@ -56,7 +56,7 @@ MAX_TOKENS_ENV = "WACA_PATH_AI_MAX_TOKENS"
 # provider -> (key env var, default model, pip package)
 PROVIDERS: dict[str, tuple[str, str, str]] = {
     "anthropic": ("ANTHROPIC_API_KEY", "claude-sonnet-4-6", "anthropic"),
-    "openai": ("OPENAI_API_KEY", "gpt-5-mini", "openai"),
+    "openai": ("OPENAI_API_KEY", "gpt-5.6-terra", "openai"),
     "google": ("GOOGLE_API_KEY", "gemini-2.5-flash", "google-genai"),
 }
 DEFAULT_RATE_LIMIT_PER_MIN = 10
