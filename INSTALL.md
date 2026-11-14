@@ -660,6 +660,35 @@ button at all. Other statuses: **429** when the per-minute cap is hit,
 **503** when the provider is set but its SDK is not installed (the message
 names `backend/requirements-ai.txt`), **502** when the provider call fails.
 
+On Cloud Run, keep the key out of environment variables and out of your
+shell history: put it in Secret Manager and let Cloud Run inject it. The
+buildpack installs only the root `requirements.txt`, so add the one SDK you
+use before deploying (this keeps the public package free of AI
+dependencies).
+
+```bash
+# once: secret + read access for the runtime service account
+gcloud services enable secretmanager.googleapis.com
+gcloud secrets create anthropic-api-key --replication-policy=automatic
+gcloud secrets add-iam-policy-binding anthropic-api-key \
+  --member="serviceAccount:waca-path-backend@<PROJECT_ID>.iam.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor
+# paste the key from the clipboard (macOS); nothing is echoed or kept in history
+pbpaste | tr -d '\n' | gcloud secrets versions add anthropic-api-key --data-file=- && pbcopy < /dev/null
+
+# deploy with the SDK and the injected key
+printf '\nanthropic>=0.40\n' >> requirements.txt
+gcloud run deploy waca-path-backend --source=. --region="${WACA_PATH_LOCATION:-asia-northeast1}" \
+  --no-allow-unauthenticated --service-account="${SA}" \
+  --set-env-vars=GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,WACA_CORE_DATASET=waca_core_output,DEFAULT_TENANT_ID=example,WACA_PATH_AI_PROVIDER=anthropic \
+  --set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest
+git checkout requirements.txt   # keep the public package unchanged
+```
+
+To switch AI off again, redeploy without `WACA_PATH_AI_PROVIDER` (the
+`--set-secrets` line can stay; the key is never read when the provider is
+unset).
+
 What is sent: only the journey context and the timeline digest - page
 paths, titles, timestamps, event names, coarse device / traffic labels and
 the `user_pseudo_id`. No custom-dimension values. Keys are read from the
@@ -798,6 +827,33 @@ site:
 を返し、画面にはボタン自体が出ません。そのほか、1 分あたりの上限に達すると **429**、
 プロバイダは設定済みだが SDK 未インストールなら **503**（メッセージに
 `backend/requirements-ai.txt` を示します）、プロバイダ呼び出し失敗は **502** です。
+
+Cloud Run では、キーを環境変数にもシェル履歴にも残さず、Secret Manager に置いて
+Cloud Run に注入させます。buildpack が入れるのは root の `requirements.txt` だけなので、
+使うプロバイダの SDK 1 行を deploy 前に追記します（公開 package に AI 依存を入れない
+ためです）。
+
+```bash
+# 初回のみ: secret と、runtime service account の読み取り権限
+gcloud services enable secretmanager.googleapis.com
+gcloud secrets create anthropic-api-key --replication-policy=automatic
+gcloud secrets add-iam-policy-binding anthropic-api-key \
+  --member="serviceAccount:waca-path-backend@<PROJECT_ID>.iam.gserviceaccount.com" \
+  --role=roles/secretmanager.secretAccessor
+# クリップボードのキーをそのまま登録（macOS）。画面にも履歴にも残らない
+pbpaste | tr -d '\n' | gcloud secrets versions add anthropic-api-key --data-file=- && pbcopy < /dev/null
+
+# SDK を追記して、キーを注入する設定で deploy
+printf '\nanthropic>=0.40\n' >> requirements.txt
+gcloud run deploy waca-path-backend --source=. --region="${WACA_PATH_LOCATION:-asia-northeast1}" \
+  --no-allow-unauthenticated --service-account="${SA}" \
+  --set-env-vars=GOOGLE_CLOUD_PROJECT=<PROJECT_ID>,WACA_CORE_DATASET=waca_core_output,DEFAULT_TENANT_ID=example,WACA_PATH_AI_PROVIDER=anthropic \
+  --set-secrets=ANTHROPIC_API_KEY=anthropic-api-key:latest
+git checkout requirements.txt   # 公開 package は元に戻す
+```
+
+AI を止めるときは `WACA_PATH_AI_PROVIDER` を外して再 deploy します（`--set-secrets` は
+残っていても、プロバイダ未設定ならキーは読まれません）。
 
 送信するのはタイムライン情報とタイムラインのダイジェスト（ページパス・タイトル・
 時刻・イベント名・粗いデバイス／流入ラベル・`user_pseudo_id`）だけで、カスタム
